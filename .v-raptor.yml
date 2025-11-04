@@ -1,0 +1,11 @@
+# .v-raptor.yml
+# Place this file in the root of the repository you want to scan.
+version: 1
+
+analysis:
+  # Paths to ignore during scans. Supports glob patterns.
+  ignore_paths:
+    - '**/tests/'
+    - '**/docs/'
+    - 'dist/'
+    - '*.md'
