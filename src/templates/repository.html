@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ repo.name }} - V-Raptor Dashboard</title>
+</head>
+<body>
+    <h1>{{ repo.name }}</h1>
+    <h2>Scans</h2>
+    <form action="/run_scan/{{ repo.id }}" method="post">
+        <button type="submit">Run New Scan</button>
+    </form>
+    <ul>
+        {% for scan in repo.scans %}
+            <li>
+                <a href="/scan/{{ scan.id }}">Scan #{{ scan.id }} - {{ scan.scan_type }} - {{ scan.status }}</a>
+                <form action="/rerun_scan/{{ scan.id }}" method="post" style="display: inline;">
+                    <button type="submit">Re-run Scan</button>
+                </form>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

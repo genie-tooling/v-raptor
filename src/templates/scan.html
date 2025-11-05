@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scan #{{ scan.id }} - V-Raptor Dashboard</title>
+</head>
+<body>
+    <h1>Scan #{{ scan.id }}</h1>
+    <h2>Findings</h2>
+    <ul>
+        {% for finding in scan.findings %}
+            <li><a href="/finding/{{ finding.id }}">{{ finding.description }}</a></li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

@@ -10,4 +10,8 @@ fi
 
 go install github.com/google/osv-scanner/cmd/osv-scanner@latest
 
-python3 main.py "$@"
+if [ "$1" == "start-web" ]; then
+    python3 -m src.server
+else
+    python3 main.py "$@"
+fi

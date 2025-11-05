@@ -3,6 +3,7 @@ import tempfile
 from git import Repo, GitCommandError
 from github import Github, GithubException
 from io import BytesIO
+import re
 
 class VCSService:
     def __init__(self, git_provider, token):
@@ -12,6 +13,27 @@ class VCSService:
             self.token = os.getenv('GITHUB_TOKEN')
         if not self.token:
             print("Warning: GITHUB_TOKEN environment variable is not set. Creating pull requests will fail.")
+
+    def is_valid_git_url(self, repo_url):
+        """Checks if a given URL is a valid git repository URL."""
+        # Check for local git repository
+        if os.path.isdir(repo_url) and os.path.isdir(os.path.join(repo_url, '.git')):
+            return repo_url
+
+        # Check for remote git repository
+        if repo_url.endswith('.git'):
+            return repo_url
+
+        # Check for GitHub and Bitbucket URLs and add .git if missing
+        github_match = re.match(r"https://github.com/([\w-]+)/([\w-]+)", repo_url)
+        if github_match:
+            return f"{repo_url}.git"
+
+        bitbucket_match = re.match(r"https://bitbucket.org/([\w-]+)/([\w-]+)", repo_url)
+        if bitbucket_match:
+            return f"{repo_url}.git"
+
+        return None
 
     def clone_repo(self, repo_url):
         """Clones a git repository to a temporary directory."""

@@ -1,13 +1,13 @@
 import os
 import re
 import json
-import google.generativeai as genai
-from .config import LLAMA_CPP_MODEL_PATH
+from .config import LLAMA_CPP_MODEL_PATH, OLLAMA_MODEL, OLLAMA_URL, GEMINI_MODEL
 
 class LLMService:
     def __init__(self, llm_provider='gemini'):
         self.llm_provider = llm_provider
         if self.llm_provider == 'gemini':
+            from google import genai
             api_key = os.getenv('GEMINI_API_KEY')
             if not api_key:
                 try:
@@ -19,11 +19,16 @@ class LLMService:
             if not api_key or api_key == "YOUR_API_KEY":
                 raise ValueError("GEMINI_API_KEY is not set or is a placeholder.")
 
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            self.model = genai.Client(api_key=api_key)
         elif self.llm_provider == 'llama.cpp':
             from llama_cpp import Llama
             self.model = Llama(model_path=LLAMA_CPP_MODEL_PATH, n_ctx=8192, n_gpu_layers=-1, verbose=False)
+        elif self.llm_provider == 'ollama':
+            try:
+                from ollama import Client
+                self.model = Client(host=OLLAMA_URL)
+            except ImportError:
+                raise ImportError("The 'ollama' library is not installed. Please install it to use the Ollama provider.")
         self.tools = [
             {
                 "name": "run_semgrep",
@@ -71,7 +76,10 @@ class LLMService:
 
     def _create_chat_completion(self, prompt, is_json=True):
         if self.llm_provider == 'gemini':
-            response = self.model.generate_content(prompt)
+            response = self.model.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt
+            )
             return response.text
         elif self.llm_provider == 'llama.cpp':
             response = self.model.create_chat_completion(
@@ -88,6 +96,24 @@ class LLMService:
                 temperature=0.1
             )
             content = response['choices'][0]['message']['content']
+            if is_json:
+                return self.extract_json(content)
+            return content
+        elif self.llm_provider == 'ollama':
+            response = self.model.chat(
+                model=OLLAMA_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a senior security engineer. Respond ONLY in the requested format."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+            content = response['message']['content']
             if is_json:
                 return self.extract_json(content)
             return content
@@ -120,11 +146,15 @@ Example response:
     }}
   ]
 }}
-```"""
+"""
         if self.llm_provider == 'gemini':
-            response = self.model.generate_content(prompt, tools=self.tools)
+            response = self.model.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                tools=self.tools
+            )
             return response
-        elif self.llm_provider == 'llama.cpp':
+        elif self.llm_provider in ['llama.cpp', 'ollama']:
             return self._create_chat_completion(prompt)
 
     def get_root_cause_analysis(self, code_snippet, vulnerability_type):
@@ -141,7 +171,7 @@ Describe the step-by-step exploit path. What is the business impact? Format your
 
     def generate_test_script(self, code_snippet, vulnerability_hypothesis):
         """Generates a Python test script for a vulnerability."""
-        prompt = f"""You are a senior security engineer. Write a standalone Python script to test for a potential '{vulnerability_hypothesis}' vulnerability in a function that contains this code:
+        prompt = f"""You are a security engineer. Write a standalone Python script to test for a potential '{vulnerability_hypothesis}' vulnerability in a function that contains this code:
 
 ```
 {code_snippet}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Finding #{{ finding.id }} - V-Raptor Dashboard</title>
+</head>
+<body>
+    <h1>Finding #{{ finding.id }}</h1>
+    <p><strong>Description:</strong> {{ finding.description }}</p>
+    <p><strong>File:</strong> {{ finding.file_path }}</p>
+    <p><strong>Line:</strong> {{ finding.line_number }}</p>
+    <p><strong>Severity:</strong> {{ finding.severity }}</p>
+    <p><strong>Confidence:</strong> {{ finding.confidence_score }}</p>
+    <p><strong>Status:</strong> {{ finding.status }}</p>
+
+    <form action="/recheck_finding/{{ finding.id }}" method="post" style="display: inline;">
+        <button type="submit">Re-check Results</button>
+    </form>
+    <form action="/rewrite_remediation/{{ finding.id }}" method="post" style="display: inline;">
+        <button type="submit">Re-write Remediation</button>
+    </form>
+
+    <h2>Code Snippet</h2>
+    <pre><code>{{ finding.code_snippet }}</code></pre>
+
+    {% if finding.patch %}
+        <h2>Patch</h2>
+        <form action="/update_patch/{{ finding.id }}" method="post">
+            <textarea name="patch_diff" rows="10" cols="80">{{ finding.patch.generated_patch_diff }}</textarea>
+            <button type="submit">Update Patch</button>
+        </form>
+    {% endif %}
+
+    <h2>Evidence</h2>
+    <ul>
+        {% for evidence in finding.evidence %}
+            <li>
+                <h3>{{ evidence.type }}</h3>
+                <pre><code>{{ evidence.content }}</code></pre>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

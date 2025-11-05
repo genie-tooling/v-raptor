@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>V-Raptor Dashboard</title>
+</head>
+<body>
+    <h1>Scanned Repositories</h1>
+    <form action="/add_repo" method="post">
+        <input type="text" name="repo_url" placeholder="Repository URL">
+        <button type="submit">Add Repository</button>
+    </form>
+    <ul>
+        {% for repo in repos %}
+            <li>
+                <a href="/repository/{{ repo.id }}">{{ repo.name }}</a>
+                <form action="/remove_repo/{{ repo.id }}" method="post" style="display: inline;">
+                    <button type="submit">Remove</button>
+                </form>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
