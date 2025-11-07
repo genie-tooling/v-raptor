@@ -1,77 +1,69 @@
 import argparse
-import logging
+from src.database import get_session, init_db, Repository
 from src.orchestrator import Orchestrator
 from src.vcs import VCSService
-from src.database import init_db
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from src.worker import start_worker
+from src import di
 
 def main():
-    parser = argparse.ArgumentParser(description="V-Raptor: AI-Powered Code Analysis")
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # Sub-parser for initializing the database
-    subparsers.add_parser('init-db', help='Initialize the database schema.')
-
-    # Sub-parser for running a single, synchronous scan
-    scan_parser = subparsers.add_parser('scan-commit', help='Run a one-time scan on a specific commit.')
-    scan_parser.add_argument('--repo-url', required=True, help='The URL of the git repository.')
-    scan_parser.add_argument('--commit-hash', required=True, help='The commit hash to analyze.')
-    scan_parser.add_argument('--repo-id', required=True, type=int, help='The ID of the repository in the database.')
-
-    # Sub-parser for running a deep scan
-    deep_scan_parser = subparsers.add_parser('deep-scan', help='Run a deep scan on a repository.')
-    deep_scan_parser.add_argument('--repo-url', required=True, help='The URL of the git repository.')
-
-    # Sub-parser for starting the webhook server
-    subparsers.add_parser('start-server', help='Start the webhook server to listen for git events.')
-
-    # Sub-parser for starting the task worker
-    subparsers.add_parser('start-worker', help='Start an RQ worker to process analysis jobs.')
-
-    # Sub-parser for generating a report
-    subparsers.add_parser('generate-report', help='Generate an HTML report of findings.')
+    parser = argparse.ArgumentParser(description='V-Raptor')
+    parser.add_argument('--scan-url', help='The URL of the repository to scan.')
+    parser.add_argument('--scan-commit', help='The commit hash to scan.')
+    parser.add_argument('--start-worker', action='store_true', help='Starts a worker process.')
+    parser.add_argument('--start-web', action='store_true', help='Starts the web server.')
+    parser.add_argument('--init-db', action='store_true', help='Initializes the database.')
 
     args = parser.parse_args()
 
-    if args.command == 'init-db':
-        print("Initializing database...")
+    if args.init_db:
         init_db()
         print("Database initialized.")
-    elif args.command == 'scan-commit':
-        from src.database import get_session
-        Session = get_session()
-        session = Session()
-        try:
-            vcs_service = VCSService(git_provider='github', token='')
-            orchestrator = Orchestrator(vcs_service, session)
-            orchestrator.run_analysis_on_commit(repo_url=args.repo_url, commit_hash=args.commit_hash, repo_id=args.repo_id)
-        finally:
-            session.close()
-    elif args.command == 'deep-scan':
-        from src.database import get_session
-        Session = get_session()
-        session = Session()
-        try:
-            vcs_service = VCSService(git_provider='github', token='')
-            orchestrator = Orchestrator(vcs_service, session)
-            orchestrator.run_deep_scan(repo_url=args.repo_url)
-        finally:
-            session.close()
-    elif args.command == 'start-server':
-        # Import here to avoid circular dependencies and keep CLI fast
-        from src.webhook_server import app
-        # In a production environment, use Gunicorn
-        # gunicorn --workers 4 --bind 0.0.0.0:5000 webhook_server:app
-        print("Starting Flask server for webhooks. Use Gunicorn in production.")
-        app.run(port=5000, host='0.0.0.0')
-    elif args.command == 'start-worker':
-        # Import here for the same reasons as above
-        from src.worker import run_worker
-        run_worker()
-    elif args.command == 'generate-report':
-        from src.report import generate_report
-        generate_report()
+        return
 
+    try:
+        from google_search import search as google_web_search_tool
+        di.google_web_search = google_web_search_tool
+        print("Successfully imported the google_web_search tool.")
+    except ImportError:
+        print("Could not import the google_search tool. Web search validation will be disabled.")
+        def placeholder_search(query: str = "") -> str:
+            print("Warning: Web search is not available in this environment. Returning no results.")
+            return ""
+        di.google_web_search = placeholder_search
+
+    if args.start_worker:
+        start_worker()
+        return
+
+    if args.start_web:
+        from src.server import app
+        app.run(debug=True)
+        return
+
+    if not args.scan_url:
+        print("Please provide a repository URL to scan with --scan-url.")
+        return
+
+    session = get_session()()
+    vcs_service = VCSService(git_provider='github', token='')
+    orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
+
+    repo = session.query(Repository).filter_by(url=args.scan_url).first()
+    if not repo:
+        print(f"Repository {args.scan_url} not found in database. Adding it.")
+        repo_name = args.scan_url.split('/')[-1].replace('.git', '')
+        repo = Repository(name=repo_name, url=args.scan_url)
+        session.add(repo)
+        session.commit()
+
+    if args.scan_commit:
+        print(f"--- Starting commit scan for {args.scan_url} at commit {args.scan_commit} ---")
+        orchestrator.run_analysis_on_commit(args.scan_url, args.scan_commit, repo.id, wait_for_completion=True)
+    else:
+        print(f"--- Starting deep scan for {args.scan_url} ---")
+        orchestrator.run_deep_scan(args.scan_url)
+
+    print("--- Scan complete. ---")
+    # -------------------------------------------------------------
 if __name__ == '__main__':
     main()

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Quality Report - V-Raptor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Code Quality Report for {{ repo.name }}</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>File Path</th>
+                <th>Cyclomatic Complexity</th>
+                <th>Code Churn</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for metric in metrics %}
+                <tr>
+                    <td>{{ metric.file_path }}</td>
+                    <td>{{ metric.cyclomatic_complexity }}</td>
+                    <td>{{ metric.code_churn }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -48,3 +48,4 @@ redis==5.0.7
 rq==1.16.2
 PyGithub==2.5.0
 ollama
+radon

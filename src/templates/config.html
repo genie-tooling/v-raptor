@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Configuration - V-Raptor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Configuration</h1>
+    <a href="/">Back to Home</a>
+
+    <h2>Ollama Settings</h2>
+    <form action="/scan_ollama_models" method="post">
+        <button type="submit">Scan for Ollama Models</button>
+    </form>
+    {% if ollama_models %}
+        <form action="/save_ollama_model" method="post">
+            <select name="ollama_model">
+                {% for model in ollama_models %}
+                    <option value="{{ model }}" {% if model == selected_ollama_model %}selected{% endif %}>{{ model }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Save</button>
+        </form>
+    {% endif %}
+
+    <h2>Gemini Settings</h2>
+    <form action="/save_gemini_api_key" method="post">
+        <input type="text" name="gemini_api_key" placeholder="Gemini API Key" size="50">
+        <button type="submit">Save</button>
+    </form>
+
+    <h2>LLM Settings</h2>
+    <form action="/save_llm_settings" method="post">
+        <label for="llm_provider">LLM Provider:</label>
+        <select name="llm_provider" id="llm_provider">
+            <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama</option>
+            <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini</option>
+            <option value="llama.cpp" {% if llm_provider == 'llama.cpp' %}selected{% endif %}>Llama.cpp</option>
+        </select>
+        <br>
+        <label for="llama_cpp_model_path">Llama.cpp Model Path:</label>
+        <input type="text" name="llama_cpp_model_path" id="llama_cpp_model_path" value="{{ llama_cpp_model_path }}" size="50">
+        <br>
+        <label for="ollama_url">Ollama URL:</label>
+        <input type="text" name="ollama_url" id="ollama_url" value="{{ ollama_url }}" size="50">
+        <br>
+        <label for="gemini_model">Gemini Model:</label>
+        <input type="text" name="gemini_model" id="gemini_model" value="{{ gemini_model }}" size="50">
+        <br>
+        <button type="submit">Save LLM Settings</button>
+    </form>
+</body>
+</html>

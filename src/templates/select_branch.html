@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Confirm Repository - V-Raptor</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Add Repository</h1>
+    <p>We found the following repository. Please select the primary branch you wish to monitor.</p>
+
+    <form action="/confirm_add_repo" method="post">
+        
+        <h2>Repository URL</h2>
+        <input type="text" name="repo_url" value="{{ repo_url }}" readonly size="60" style="background-color: #222; cursor: default;">
+
+        <h2>Select Branch</h2>
+        <select name="branch" style="padding: 0.5rem; background-color: #333; color: #e0e0e0; border: 1px solid #555;">
+            {% for branch in branches %}
+                <option value="{{ branch }}" {% if branch == selected_branch %}selected{% endif %}>
+                    {{ branch }}
+                </option>
+            {% endfor %}
+        </select>
+        
+        <div style="margin-top: 1.5rem;">
+            <button type="submit">Confirm and Add Repository</button>
+            <a href="/" style="margin-left: 1rem; color: #aaa;">Cancel</a>
+        </div>
+    </form>
+</body>
+</html>

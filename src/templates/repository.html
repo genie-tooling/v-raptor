@@ -2,9 +2,11 @@
 <html>
 <head>
     <title>{{ repo.name }} - V-Raptor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <h1>{{ repo.name }}</h1>
+    <a href="/repository/{{ repo.id }}/quality">Code Quality Report</a>
     <h2>Scans</h2>
     <form action="/run_scan/{{ repo.id }}" method="post">
         <button type="submit">Run New Scan</button>

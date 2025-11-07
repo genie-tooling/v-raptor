@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard - V-Raptor</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <a href="/">Back to Home</a>
+
+    <h2>Project Health</h2>
+    <div class="dashboard-metrics">
+        <div class="metric">
+            <h3>Total Repositories</h3>
+            <p>{{ metrics.total_repos }}</p>
+        </div>
+        <div class="metric">
+            <h3>Total Scans</h3>
+            <p>{{ metrics.total_scans }}</p>
+        </div>
+        <div class="metric">
+            <h3>Total Findings</h3>
+            <p>{{ metrics.total_findings }}</p>
+        </div>
+        <div class="metric">
+            <h3>Stale Secrets</h3>
+            <p>{{ metrics.stale_secrets }}</p>
+        </div>
+    </div>
+</body>
+</html>

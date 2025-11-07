@@ -1,9 +1,12 @@
+# src/worker.py
+
 import logging
 from rq import Worker, Queue, Connection
 from redis import Redis
 from src.orchestrator import Orchestrator
 from src.vcs import VCSService
 from src.database import get_session
+from src import di
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -12,24 +15,31 @@ redis_conn = Redis()
 
 def run_analysis_job(repo_url, commit_hash, repo_id):
     """
-    The function that will be executed by the RQ worker.
-    This function exists to instantiate services for a single job.
+    This is the background task that will be executed by the RQ worker.
+    It runs a commit analysis.
     """
-    logging.info(f"Worker picking up job for repo: {repo_url}, commit: {commit_hash}")
-    Session = get_session()
-    session = Session()
+    logging.info(f"Starting analysis job for repo: {repo_url}, commit: {commit_hash}")
+    try:
+        from google_search import search as google_web_search_tool
+        di.google_web_search = google_web_search_tool
+    except ImportError:
+        logging.warning("google_search tool not found in worker environment.")
+        def placeholder_search(query: str = ""): return ""
+        di.google_web_search = placeholder_search
+    # ----------------------------------------------------
+
+    session = get_session()()
     try:
         vcs_service = VCSService(git_provider='github', token='')
-        orchestrator = Orchestrator(vcs_service, session)
-        orchestrator.run_analysis_on_commit(repo_url, commit_hash, repo_id)
-        logging.info(f"Successfully finished job for commit {commit_hash}")
+        orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
+        orchestrator.run_analysis_on_commit(repo_url, commit_hash, repo_id, wait_for_completion=True)
+        logging.info(f"Analysis job completed for commit: {commit_hash}")
     except Exception as e:
-        logging.error(f"Job for commit {commit_hash} failed: {e}", exc_info=True)
+        logging.error(f"Analysis job failed for commit {commit_hash}: {e}", exc_info=True)
     finally:
         session.close()
 
-
-def run_worker():
+def start_worker():
     """Starts the RQ worker."""
     with Connection(redis_conn):
         worker = Worker(map(Queue, listen))
@@ -37,4 +47,4 @@ def run_worker():
         worker.work()
 
 if __name__ == '__main__':
-    run_worker()
+    start_worker()

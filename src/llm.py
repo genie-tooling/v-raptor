@@ -22,7 +22,7 @@ class LLMService:
             self.model = genai.Client(api_key=api_key)
         elif self.llm_provider == 'llama.cpp':
             from llama_cpp import Llama
-            self.model = Llama(model_path=LLAMA_CPP_MODEL_PATH, n_ctx=8192, n_gpu_layers=-1, verbose=False)
+            self.model = Llama(model_path=LLAMA_CPP_MODEL_PATH, n_ctx=32767, n_gpu_layers=-1, verbose=False)
         elif self.llm_provider == 'ollama':
             try:
                 from ollama import Client
@@ -71,6 +71,20 @@ class LLMService:
                     },
                     "required": ["repo_path"]
                 }
+            },
+            {
+                "name": "google_web_search",
+                "description": "Performs a web search using Google Search and returns the results.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to find information on the web."
+                        }
+                    },
+                    "required": ["query"]
+                }
             }
         ]
 
@@ -111,7 +125,8 @@ class LLMService:
                         "role": "user",
                         "content": prompt
                     }
-                ]
+                ],
+                options={'num_ctx': 32767}
             )
             content = response['message']['content']
             if is_json:
@@ -132,6 +147,8 @@ Respond with a JSON object containing a list of vulnerabilities. Each vulnerabil
 - line_number: The line number where the vulnerability is located.
 - description: A short, one-sentence description of the vulnerability.
 - code_snippet: The exact line(s) of vulnerable code from the diff.
+
+Only report vulnerabilities with a high confidence score. Do not include any explanations or ask any questions.
 
 If no vulnerabilities are found, respond with an empty JSON object: {{}}.
 Example response:
@@ -157,20 +174,81 @@ Example response:
         elif self.llm_provider in ['llama.cpp', 'ollama']:
             return self._create_chat_completion(prompt)
 
+    def get_ollama_models(self):
+        """Gets the list of available Ollama models."""
+        if self.llm_provider == 'ollama':
+            try:
+                return [model['name'] for model in self.model.list()['models']]
+            except Exception as e:
+                print(f"Error getting Ollama models: {e}")
+                return []
+        return []
+
+    def analyze_file(self, file_path):
+        """Analyzes a file and returns a list of potential vulnerabilities."""
+        with open(file_path, 'r') as f:
+            content = f.read()
+
+        prompt = f"""You are a senior security engineer. Analyze the following file and identify potential vulnerabilities.
+
+File: {file_path}
+
+```
+{content}
+```
+
+Respond with a JSON object containing a list of vulnerabilities. Each vulnerability should have the following fields:
+- file_path: The path to the file where the vulnerability is located.
+- line_number: The line number where the vulnerability is located.
+- description: A short, one-sentence description of the vulnerability.
+- code_snippet: The exact line(s) of vulnerable code from the file.
+
+Important: 
+- The mere presence of a library (e.g., 'rich') is not a vulnerability unless a specific version is known to be vulnerable.
+- Entries in `.gitignore` files (e.g., '*.msi') are not vulnerabilities.
+- Only report vulnerabilities with a high confidence score. Do not include any explanations or ask any questions.
+
+If no vulnerabilities are found, respond with an empty JSON object: {{}}.
+Example response:
+```json
+{{
+  "vulnerabilities": [
+    {{
+      "file_path": "src/user.py",
+      "line_number": 42,
+      "description": "SQL injection vulnerability due to string formatting.",
+      "code_snippet": "cursor.execute(f\"SELECT * FROM users WHERE username = '{{username}}'\")"
+    }}
+  ]
+}}
+```"""
+        if self.llm_provider == 'gemini':
+            response = self.model.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                tools=self.tools
+            )
+            return response
+        elif self.llm_provider in ['llama.cpp', 'ollama']:
+            return self._create_chat_completion(prompt)
+
     def get_root_cause_analysis(self, code_snippet, vulnerability_type):
         """Gets a root cause analysis for a vulnerability."""
-        prompt = f"""You are a senior security engineer. Explain this potential '{vulnerability_type}' vulnerability in the provided code snippet.
+        prompt = f"""You are a senior security engineer. Provide a brief explanation of this potential '{vulnerability_type}' vulnerability in the provided code snippet.
 
 Code Snippet:
 ```
 {code_snippet}
 ```
 
-Describe the step-by-step exploit path. What is the business impact? Format your response as clean Markdown."""
+Explain the vulnerability, its potential impact, and how to fix it. Format your response as clean Markdown. Do not ask any questions."""
         return self._create_chat_completion(prompt, is_json=False)
 
     def generate_test_script(self, code_snippet, vulnerability_hypothesis):
-        """Generates a Python test script for a vulnerability."""
+        """Generates a Python test script for a vulnerability.
+        
+        Note: The generated code is a test script to confirm the vulnerability, not 'fake code'.
+        """
         prompt = f"""You are a security engineer. Write a standalone Python script to test for a potential '{vulnerability_hypothesis}' vulnerability in a function that contains this code:
 
 ```
@@ -180,10 +258,9 @@ Describe the step-by-step exploit path. What is the business impact? Format your
 The script must:
 1.  Use only standard Python libraries or the 'requests' library.
 2.  Be self-contained and ready to execute.
-3.  Attempt to confirm the exploit.
-4.  Print 'VULNERABILITY_CONFIRMED' to stdout if the exploit is successful.
-5.  Print 'VULNERABILITY_NOT_CONFIRMED' otherwise.
-6.  Respond with ONLY the raw Python code inside a ```python markdown block. Do not include any explanations.
+3.  Be a functional test that can actually confirm the vulnerability, not just an example.
+4.  Print a clear message indicating whether the vulnerability was confirmed or not.
+5.  Respond with ONLY the raw Python code inside a ```python markdown block. Do not include any explanations.
 """
         response = self._create_chat_completion(prompt, is_json=False)
         return self.extract_python_code(response)
@@ -250,3 +327,16 @@ Respond with a JSON object containing a list of misconfigurations. Each misconfi
         if match:
             return match.group(1).strip()
         return text.strip()
+
+    def validate_vulnerability(self, vulnerability_description, search_results):
+        """Validates a vulnerability based on search results."""
+        prompt = f"""You are a senior security engineer. Based on the following vulnerability description and search results, determine if the vulnerability is likely to be a false positive.
+
+Vulnerability Description:
+{vulnerability_description}
+
+Search Results:
+{search_results}
+
+Respond with a JSON object with a single key, "false_positive", which is a boolean. Do not include any explanations or ask any questions."""
+        return self._create_chat_completion(prompt)

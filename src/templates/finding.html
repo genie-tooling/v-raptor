@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Finding #{{ finding.id }} - V-Raptor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <h1>Finding #{{ finding.id }}</h1>
@@ -11,6 +12,9 @@
     <p><strong>Severity:</strong> {{ finding.severity }}</p>
     <p><strong>Confidence:</strong> {{ finding.confidence_score }}</p>
     <p><strong>Status:</strong> {{ finding.status }}</p>
+    {% if finding.cve_id %}
+        <p><strong>CVE:</strong> <a href="https://www.cve.org/CVERecord?id={{ finding.cve_id }}" target="_blank">{{ finding.cve_id }}</a></p>
+    {% endif %}
 
     <form action="/recheck_finding/{{ finding.id }}" method="post" style="display: inline;">
         <button type="submit">Re-check Results</button>
@@ -39,5 +43,45 @@
             </li>
         {% endfor %}
     </ul>
+
+    <h2>Chat with V-Raptor</h2>
+    <div id="chat-history">
+        {% for message in chat_history %}
+            <p><strong>{{ message.sender }}:</strong> {{ message.message }}</p>
+        {% endfor %}
+    </div>
+    <form id="chat-form">
+        <input type="text" id="chat-input" placeholder="Ask a question about this finding...">
+        <button type="submit">Send</button>
+    </form>
+
+    <script>
+        const chatHistory = document.getElementById('chat-history');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = chatInput.value;
+            chatInput.value = '';
+
+            const userMessage = document.createElement('p');
+            userMessage.textContent = `You: ${message}`;
+            chatHistory.appendChild(userMessage);
+
+            const response = await fetch(`/chat/{{ finding.id }}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ message })
+            });
+
+            const data = await response.json();
+            const botMessage = document.createElement('p');
+            botMessage.textContent = `V-Raptor: ${data.response}`;
+            chatHistory.appendChild(botMessage);
+        });
+    </script>
 </body>
 </html>

@@ -2,11 +2,28 @@
 <html>
 <head>
     <title>V-Raptor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; font-weight: bold; }
+        .flash.error { background-color: #cf6679; color: #121212; }
+        .flash.success { background-color: #03dac6; color: #121212; }
+        .flash.info { background-color: #bb86fc; color: #121212; }
+    </style>
 </head>
 <body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
     <h1>Scanned Repositories</h1>
+    <a href="/config">Configuration</a>
+    <a href="/dashboard">Dashboard</a>
     <form action="/add_repo" method="post">
-        <input type="text" name="repo_url" placeholder="Repository URL">
+        <input type="text" name="repo_url" placeholder="Repository URL (e.g., https://github.com/user/repo/tree/main)" size="60">
         <button type="submit">Add Repository</button>
     </form>
     <ul>
