@@ -1,31 +1,131 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dashboard - V-Raptor</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <h1>Dashboard</h1>
-    <a href="/">Back to Home</a>
+{% extends "layout.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
 
-    <h2>Project Health</h2>
-    <div class="dashboard-metrics">
-        <div class="metric">
-            <h3>Total Repositories</h3>
-            <p>{{ metrics.total_repos }}</p>
-        </div>
-        <div class="metric">
-            <h3>Total Scans</h3>
-            <p>{{ metrics.total_scans }}</p>
-        </div>
-        <div class="metric">
-            <h3>Total Findings</h3>
-            <p>{{ metrics.total_findings }}</p>
-        </div>
-        <div class="metric">
-            <h3>Stale Secrets</h3>
-            <p>{{ metrics.stale_secrets }}</p>
+<div class="row">
+    <div class="col-md-4">
+        <a href="/" class="text-decoration-none">
+            <div class="card text-white bg-primary mb-3">
+                <div class="card-header">Total Repositories</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ metrics.total_repos }}</h4>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a href="/scans" class="text-decoration-none">
+            <div class="card text-white bg-success mb-3">
+                <div class="card-header">Total Scans</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ metrics.total_scans }}</h4>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a href="/findings" class="text-decoration-none">
+            <div class="card text-white bg-danger mb-3">
+                <div class="card-header">Total Findings</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ metrics.total_findings }}</h4>
+                </div>
+            </div>
+        </a>
+    </div>
+<div class="card border-secondary mt-4">
+    <div class="card-header">Recent Scans</div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th scope="col">Scan ID</th>
+                    <th scope="col">Repository</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in recent_scans %}
+                <tr>
+                    <td><a href="/scan/{{ scan.id }}">#{{ scan.id }}</a></td>
+                    <td><a href="/repository/{{ scan.repository.id }}">{{ scan.repository.name }}</a></td>
+                    <td>{{ scan.scan_type }}</td>
+                    <td>
+                        {% if scan.status.value == 'running' %}
+                            <span class="badge bg-info">Running...</span>
+                        {% elif scan.status.value == 'completed' %}
+                            <span class="badge bg-success">Completed</span>
+                        {% elif scan.status.value == 'queued' %}
+                            <span class="badge bg-secondary">Queued</span>
+                        {% elif scan.status.value == 'failed' %}
+                            <span class="badge bg-danger">Failed</span>
+                        {% else %}
+                            <span class="badge bg-dark">{{ scan.status.value }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header">Findings by Severity</div>
+            <div class="card-body">
+                <canvas id="severityChart"></canvas>
+            </div>
         </div>
     </div>
-</body>
-</html>
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header">Findings by Repository</div>
+            <div class="card-body">
+                <canvas id="repoChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const severityData = {
+            labels: [{% for severity, count in findings_by_severity %}'{{ severity }}',{% endfor %}],
+            datasets: [{
+                label: 'Findings by Severity',
+                data: [{% for severity, count in findings_by_severity %}{{ count }},{% endfor %}],
+                backgroundColor: [
+                    '#dc3545', // Red for CRITICAL
+                    '#fd7e14', // Orange for HIGH
+                    '#ffc107', // Yellow for MEDIUM
+                    '#0dcaf0', // Cyan for LOW
+                    '#6c757d'  // Grey for others
+                ],
+            }]
+        };
+
+        const repoData = {
+            labels: [{% for repo, count in findings_by_repo %}'{{ repo }}',{% endfor %}],
+            datasets: [{
+                label: 'Findings by Repository',
+                data: [{% for repo, count in findings_by_repo %}{{ count }},{% endfor %}],
+                backgroundColor: '#0d6efd', // Blue
+            }]
+        };
+
+        const severityChart = new Chart(document.getElementById('severityChart'), {
+            type: 'pie',
+            data: severityData,
+        });
+
+        const repoChart = new Chart(document.getElementById('repoChart'), {
+            type: 'bar',
+            data: repoData,
+        });
+    });
+</script>
+{% endblock %}

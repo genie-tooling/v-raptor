@@ -1,40 +1,43 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>V-Raptor Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <style>
-        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; font-weight: bold; }
-        .flash.error { background-color: #cf6679; color: #121212; }
-        .flash.success { background-color: #03dac6; color: #121212; }
-        .flash.info { background-color: #bb86fc; color: #121212; }
-    </style>
-</head>
-<body>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="flash {{ category }}">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-
-    <h1>Scanned Repositories</h1>
-    <a href="/config">Configuration</a>
-    <a href="/dashboard">Dashboard</a>
-    <form action="/add_repo" method="post">
-        <input type="text" name="repo_url" placeholder="Repository URL (e.g., https://github.com/user/repo/tree/main)" size="60">
-        <button type="submit">Add Repository</button>
+{% extends "layout.html" %}
+{% block title %}Repositories{% endblock %}
+{% block content %}
+<div class="card border-primary mb-3">
+  <div class="card-header">Add Repository</div>
+  <div class="card-body">
+    <form action="/add_repo" method="post" class="row g-3">
+      <div class="col-auto">
+        <input type="text" name="repo_url" class="form-control" placeholder="Repository URL" size="60">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Add Repository</button>
+      </div>
     </form>
-    <ul>
+  </div>
+</div>
+
+<div class="card border-secondary">
+  <div class="card-header">Scanned Repositories</div>
+  <div class="card-body">
+    <table class="table table-hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
         {% for repo in repos %}
-            <li>
-                <a href="/repository/{{ repo.id }}">{{ repo.name }}</a>
-                <form action="/remove_repo/{{ repo.id }}" method="post" style="display: inline;">
-                    <button type="submit">Remove</button>
-                </form>
-            </li>
+        <tr>
+          <td><a href="/repository/{{ repo.id }}">{{ repo.name }}</a></td>
+          <td>
+            <form action="/remove_repo/{{ repo.id }}" method="post" style="display: inline;">
+              <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
         {% endfor %}
-    </ul>
-</body>
-</html>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

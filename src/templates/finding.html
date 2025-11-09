@@ -1,61 +1,123 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Finding #{{ finding.id }} - V-Raptor Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "layout.html" %}
+{% block title %}Finding #{{ finding.id }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Finding #{{ finding.id }}</h1>
-    <p><strong>Description:</strong> {{ finding.description }}</p>
-    <p><strong>File:</strong> {{ finding.file_path }}</p>
-    <p><strong>Line:</strong> {{ finding.line_number }}</p>
-    <p><strong>Severity:</strong> {{ finding.severity }}</p>
-    <p><strong>Confidence:</strong> {{ finding.confidence_score }}</p>
-    <p><strong>Status:</strong> {{ finding.status }}</p>
-    {% if finding.cve_id %}
-        <p><strong>CVE:</strong> <a href="https://www.cve.org/CVERecord?id={{ finding.cve_id }}" target="_blank">{{ finding.cve_id }}</a></p>
-    {% endif %}
+    <a href="/scan/{{ finding.scan.id }}" class="btn btn-secondary">Back to Scan</a>
+</div>
 
-    <form action="/recheck_finding/{{ finding.id }}" method="post" style="display: inline;">
-        <button type="submit">Re-check Results</button>
-    </form>
-    <form action="/rewrite_remediation/{{ finding.id }}" method="post" style="display: inline;">
-        <button type="submit">Re-write Remediation</button>
-    </form>
-
-    <h2>Code Snippet</h2>
-    <pre><code>{{ finding.code_snippet }}</code></pre>
-
-    {% if finding.patch %}
-        <h2>Patch</h2>
-        <form action="/update_patch/{{ finding.id }}" method="post">
-            <textarea name="patch_diff" rows="10" cols="80">{{ finding.patch.generated_patch_diff }}</textarea>
-            <button type="submit">Update Patch</button>
-        </form>
-    {% endif %}
-
-    <h2>Evidence</h2>
-    <ul>
-        {% for evidence in finding.evidence %}
-            <li>
-                <h3>{{ evidence.type }}</h3>
-                <pre><code>{{ evidence.content }}</code></pre>
-            </li>
-        {% endfor %}
-    </ul>
-
-    <h2>Chat with V-Raptor</h2>
-    <div id="chat-history">
-        {% for message in chat_history %}
-            <p><strong>{{ message.sender }}:</strong> {{ message.message }}</p>
-        {% endfor %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card border-primary mb-3">
+            <div class="card-header">Details</div>
+            <div class="card-body">
+                <p><strong>Description:</strong> {{ finding.description }}</p>
+                <p><strong>File:</strong> {{ finding.file_path }}</p>
+                <p><strong>Line:</strong> {{ finding.line_number }}</p>
+                <p><strong>Severity:</strong>
+                    {% if finding.severity == 'CRITICAL' %}
+                        <span class="badge bg-danger">{{ finding.severity }}</span>
+                    {% elif finding.severity == 'HIGH' %}
+                        <span class="badge bg-warning">{{ finding.severity }}</span>
+                    {% elif finding.severity == 'MEDIUM' %}
+                        <span class="badge bg-info">{{ finding.severity }}</span>
+                    {% elif finding.severity == 'LOW' %}
+                        <span class="badge bg-success">{{ finding.severity }}</span>
+                    {% else %}
+                        <span class="badge bg-secondary">{{ finding.severity or 'N/A' }}</span>
+                    {% endif %}
+                </p>
+                <p><strong>Confidence:</strong> {{ finding.confidence_score }}</p>
+                <p><strong>Status:</strong> {{ finding.status }}</p>
+                {% if finding.cve_id %}
+                    <p><strong>CVE:</strong> <a href="https://www.cve.org/CVERecord?id={{ finding.cve_id }}" target="_blank">{{ finding.cve_id }}</a></p>
+                {% else %}
+                    <form action="/finding/{{ finding.id }}/search_cve" method="post" class="mt-2">
+                        <button type="submit" class="btn btn-info btn-sm">Search for CVE</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
     </div>
-    <form id="chat-form">
-        <input type="text" id="chat-input" placeholder="Ask a question about this finding...">
-        <button type="submit">Send</button>
-    </form>
+    <div class="col-md-6">
+        <div class="card border-secondary mb-3">
+            <div class="card-header">Code Snippet</div>
+            <div class="card-body">
+                <pre><code>{{ finding.code_snippet }}</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
 
-    <script>
+<div class="card border-info">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" data-bs-toggle="tab" href="#evidence">Evidence</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#patch">Patch</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#chat">Chat</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="evidence">
+                {% for evidence in finding.evidence %}
+                    <h4>{{ evidence.type }}</h4>
+                    <div class="evidence-content" data-content="{{ evidence.content }}"></div>
+                    <hr>
+                {% endfor %}
+                <form action="/recheck_finding/{{ finding.id }}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-primary">Re-check Results</button>
+                </form>
+            </div>
+            <div class="tab-pane fade" id="patch">
+                {% if not finding.patch %}
+                    <form action="/generate_patch/{{ finding.id }}" method="post">
+                        <button type="submit" class="btn btn-primary">Generate Patch</button>
+                    </form>
+                {% else %}
+                    <form action="/update_patch/{{ finding.id }}" method="post">
+                        <div class="mb-3">
+                            <textarea name="patch_diff" class="form-control" rows="10">{{ finding.patch.generated_patch_diff }}</textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Patch</button>
+                    </form>
+                    <form action="/rewrite_remediation/{{ finding.id }}" method="post" style="display: inline;" class="ms-2">
+                        <button type="submit" class="btn btn-secondary">Re-write Remediation</button>
+                    </form>
+                {% endif %}
+            </div>
+            <div class="tab-pane fade" id="chat">
+                <div id="chat-history" class="mb-3" style="height: 300px; overflow-y: scroll; border: 1px solid #444; padding: 1rem; border-radius: 4px;">
+                    {% for message in chat_history %}
+                        <p><strong>{{ message.sender }}:</strong> {{ message.message }}</p>
+                    {% endfor %}
+                </div>
+                <form id="chat-form">
+                    <div class="input-group">
+                        <input type="text" id="chat-input" class="form-control" placeholder="Ask a question about this finding...">
+                        <button type="submit" class="btn btn-primary">Send</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const evidenceContainers = document.querySelectorAll('.evidence-content');
+        evidenceContainers.forEach(container => {
+            const content = container.getAttribute('data-content');
+            container.innerHTML = marked.parse(content);
+        });
+
         const chatHistory = document.getElementById('chat-history');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
@@ -66,8 +128,9 @@
             chatInput.value = '';
 
             const userMessage = document.createElement('p');
-            userMessage.textContent = `You: ${message}`;
+            userMessage.innerHTML = `<strong>You:</strong> ${message}`;
             chatHistory.appendChild(userMessage);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
 
             const response = await fetch(`/chat/{{ finding.id }}`, {
                 method: 'POST',
@@ -79,9 +142,10 @@
 
             const data = await response.json();
             const botMessage = document.createElement('p');
-            botMessage.textContent = `V-Raptor: ${data.response}`;
+            botMessage.innerHTML = `<strong>V-Raptor:</strong> ${data.response}`;
             chatHistory.appendChild(botMessage);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
         });
-    </script>
-</body>
-</html>
+    });
+</script>
+{% endblock %}

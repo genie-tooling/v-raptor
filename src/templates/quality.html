@@ -1,28 +1,71 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Code Quality Report - V-Raptor Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "layout.html" %}
+{% block title %}Code Quality Report{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Code Quality Report for {{ repo.name }}</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>File Path</th>
-                <th>Cyclomatic Complexity</th>
-                <th>Code Churn</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for metric in metrics %}
+    <a href="/repository/{{ repo.id }}" class="btn btn-secondary">Back to Repository</a>
+</div>
+
+<div class="card border-secondary">
+    <div class="card-header">Metrics</div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th scope="col">File Path</th>
+                    <th scope="col">Cyclomatic Complexity</th>
+                    <th scope="col">Code Churn</th>
+                    <th scope="col">SLOC</th>
+                    <th scope="col">LLOC</th>
+                    <th scope="col">Comments</th>
+                    <th scope="col">Halstead Volume</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for metric in metrics %}
                 <tr>
                     <td>{{ metric.file_path }}</td>
                     <td>{{ metric.cyclomatic_complexity }}</td>
                     <td>{{ metric.code_churn }}</td>
+                    <td>{{ metric.sloc }}</td>
+                    <td>{{ metric.lloc }}</td>
+                    <td>{{ metric.comments }}</td>
+                    <td>{{ metric.halstead_volume }}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="getInterpretation({{ metric.id }})">Get Interpretation</button>
+                    </td>
                 </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</body>
-</html>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="interpretationModal" tabindex="-1" aria-labelledby="interpretationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="interpretationModalLabel">Interpretation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p id="interpretationText"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function getInterpretation(metricId) {
+    fetch('/interpret_quality_metrics/' + metricId)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('interpretationText').innerText = data.interpretation;
+            var myModal = new bootstrap.Modal(document.getElementById('interpretationModal'), {});
+            myModal.show();
+        });
+}
+</script>
+{% endblock %}

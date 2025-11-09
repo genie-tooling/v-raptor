@@ -6,29 +6,42 @@ import os
 os.environ['GEMINI_API_KEY'] = 'test-key'
 
 from src.llm import LLMService
+from src import config
 
 class TestLLMService(unittest.TestCase):
 
-    @patch('google.genai.Client')
+    @patch('src.llm_providers.gemini.genai.Client')
     def test_gemini_initialization(self, mock_gemini_client):
         """Test that the LLMService initializes correctly with the gemini provider."""
-        service = LLMService(llm_provider='gemini')
-        self.assertIsNotNone(service.model)
-        mock_gemini_client.assert_called_once_with(api_key='test-key')
+        with patch.object(config, 'SCANNER_LLM_PROVIDER', 'gemini'), \
+             patch.object(config, 'PATCHER_LLM_PROVIDER', 'gemini'):
+            service = LLMService()
+            self.assertIsNotNone(service.scanner_client)
+            self.assertIsNotNone(service.patcher_client)
+        self.assertEqual(mock_gemini_client.call_count, 2)
 
-    @patch('llama_cpp.Llama')
+    @patch('src.llm_providers.llama_cpp.Llama')
     def test_llama_cpp_initialization(self, mock_llama):
         """Test that the LLMService initializes correctly with the llama.cpp provider."""
-        service = LLMService(llm_provider='llama.cpp')
-        self.assertIsNotNone(service.model)
-        mock_llama.assert_called_once()
+        with patch.object(config, 'SCANNER_LLM_PROVIDER', 'llama.cpp'), \
+             patch.object(config, 'SCANNER_LLAMA_CPP_MODEL_PATH', 'test-path'), \
+             patch.object(config, 'PATCHER_LLM_PROVIDER', 'llama.cpp'), \
+             patch.object(config, 'PATCHER_LLAMA_CPP_MODEL_PATH', 'test-path'), \
+             patch('os.path.exists', return_value=True):
+            service = LLMService()
+            self.assertIsNotNone(service.scanner_client)
+            self.assertIsNotNone(service.patcher_client)
+        self.assertEqual(mock_llama.call_count, 2)
 
-    @patch('ollama.Client')
+    @patch('src.llm_providers.ollama.Client')
     def test_ollama_initialization(self, mock_ollama_client):
         """Test that the LLMService initializes correctly with the ollama provider."""
-        service = LLMService(llm_provider='ollama')
-        self.assertIsNotNone(service.model)
-        mock_ollama_client.assert_called_once()
+        with patch.object(config, 'SCANNER_LLM_PROVIDER', 'ollama'), \
+             patch.object(config, 'PATCHER_LLM_PROVIDER', 'ollama'):
+            service = LLMService()
+            self.assertIsNotNone(service.scanner_client)
+            self.assertIsNotNone(service.patcher_client)
+        self.assertEqual(mock_ollama_client.call_count, 2)
 
 if __name__ == '__main__':
     unittest.main()

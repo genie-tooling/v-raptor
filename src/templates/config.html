@@ -1,53 +1,186 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Configuration - V-Raptor Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <h1>Configuration</h1>
-    <a href="/">Back to Home</a>
+{% extends "layout.html" %}
+{% block title %}Configuration{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
 
-    <h2>Ollama Settings</h2>
-    <form action="/scan_ollama_models" method="post">
-        <button type="submit">Scan for Ollama Models</button>
-    </form>
-    {% if ollama_models %}
-        <form action="/save_ollama_model" method="post">
-            <select name="ollama_model">
-                {% for model in ollama_models %}
-                    <option value="{{ model }}" {% if model == selected_ollama_model %}selected{% endif %}>{{ model }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit">Save</button>
+<div class="card border-primary mb-3">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" data-bs-toggle="tab" href="#scanner">Scanner Settings</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#patcher">Patcher Settings</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#api-keys">API Keys</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#tool-paths">Tool Paths</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <form action="/save_llm_settings" method="post">
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="scanner">
+                    <p>This model is used for analyzing code and finding vulnerabilities.</p>
+                    <div class="mb-3">
+                        <label for="scanner_llm_provider" class="form-label">LLM Provider:</label>
+                        <select name="scanner_llm_provider" id="scanner_llm_provider" class="form-select" data-client-type="scanner">
+                            <option value="ollama" {% if config.SCANNER_LLM_PROVIDER == 'ollama' %}selected{% endif %}>Ollama</option>
+                            <option value="gemini" {% if config.SCANNER_LLM_PROVIDER == 'gemini' %}selected{% endif %}>Gemini</option>
+                            <option value="llama.cpp" {% if config.SCANNER_LLM_PROVIDER == 'llama.cpp' %}selected{% endif %}>Llama.cpp</option>
+                        </select>
+                    </div>
+                    
+                    <div id="scanner-ollama-fields" class="provider-fields">
+                        <div class="mb-3">
+                            <label for="scanner_ollama_url" class="form-label">Ollama URL:</label>
+                            <input type="text" name="scanner_ollama_url" class="form-control" value="{{ config.SCANNER_OLLAMA_URL }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="scanner_ollama_model" class="form-label">Ollama Model Name:</label>
+                            <select name="scanner_ollama_model" id="scanner_ollama_model" class="form-select">
+                                {% for model in scanner_models %}
+                                    <option value="{{ model }}" {% if config.SCANNER_OLLAMA_MODEL == model %}selected{% endif %}>{{ model }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="scanner-gemini-fields" class="provider-fields">
+                        <div class="mb-3">
+                            <label for="scanner_gemini_model" class="form-label">Gemini Model:</label>
+                            <select name="scanner_gemini_model" id="scanner_gemini_model" class="form-select">
+                                {% for model in scanner_models %}
+                                    <option value="{{ model }}" {% if config.SCANNER_GEMINI_MODEL == model %}selected{% endif %}>{{ model }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="scanner-llama-cpp-fields" class="provider-fields">
+                        <div class="mb-3">
+                            <label for="scanner_llama_cpp_model_path" class="form-label">Llama.cpp Model Path:</label>
+                            <input type="text" name="scanner_llama_cpp_model_path" class="form-control" value="{{ config.SCANNER_LLAMA_CPP_MODEL_PATH }}">
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="patcher">
+                    <p>This model is used for generating patches to fix vulnerabilities. It can be a more powerful model.</p>
+                    <div class="mb-3">
+                        <label for="patcher_llm_provider" class="form-label">LLM Provider:</label>
+                        <select name="patcher_llm_provider" id="patcher_llm_provider" class="form-select" data-client-type="patcher">
+                            <option value="ollama" {% if config.PATCHER_LLM_PROVIDER == 'ollama' %}selected{% endif %}>Ollama</option>
+                            <option value="gemini" {% if config.PATCHER_LLM_PROVIDER == 'gemini' %}selected{% endif %}>Gemini</option>
+                            <option value="llama.cpp" {% if config.PATCHER_LLM_PROVIDER == 'llama.cpp' %}selected{% endif %}>Llama.cpp</option>
+                        </select>
+                    </div>
+                    
+                    <div id="patcher-ollama-fields" class="provider-fields">
+                        <div class="mb-3">
+                            <label for="patcher_ollama_url" class="form-label">Ollama URL:</label>
+                            <input type="text" name="patcher_ollama_url" class="form-control" value="{{ config.PATCHER_OLLAMA_URL }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="patcher_ollama_model" class="form-label">Ollama Model Name:</label>
+                            <select name="patcher_ollama_model" id="patcher_ollama_model" class="form-select">
+                                {% for model in patcher_models %}
+                                    <option value="{{ model }}" {% if config.PATCHER_OLLAMA_MODEL == model %}selected{% endif %}>{{ model }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="patcher-gemini-fields" class="provider-fields">
+                        <div class="mb-3">
+                            <label for="patcher_gemini_model" class="form-label">Gemini Model:</label>
+                            <select name="patcher_gemini_model" id="patcher_gemini_model" class="form-select">
+                                {% for model in patcher_models %}
+                                    <option value="{{ model }}" {% if config.PATCHER_GEMINI_MODEL == model %}selected{% endif %}>{{ model }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="patcher-llama-cpp-fields" class="provider-fields">
+                        <div class="mb-3">
+                            <label for="patcher_llama_cpp_model_path" class="form-label">Llama.cpp Model Path:</label>
+                            <input type="text" name="patcher_llama_cpp_model_path" class="form-control" value="{{ config.PATCHER_LLAMA_CPP_MODEL_PATH }}">
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="api-keys">
+                    <div class="mb-3">
+                        <label for="gemini_api_key" class="form-label">Gemini API Key</label>
+                        <form action="/save_gemini_api_key" method="post" class="d-flex">
+                            <input type="text" name="gemini_api_key" class="form-control" placeholder="Enter new Gemini API Key">
+                            <button type="submit" class="btn btn-primary ms-2">Save</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="tool-paths">
+                    <div class="mb-3">
+                        <label for="gitleaks_path" class="form-label">Gitleaks Path</label>
+                        <input type="text" name="gitleaks_path" class="form-control" value="{{ config.GITLEAKS_PATH }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="semgrep_path" class="form-label">Semgrep Path</label>
+                        <input type="text" name="semgrep_path" class="form-control" value="{{ config.SEMGREP_PATH }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="bandit_path" class="form-label">Bandit Path</label>
+                        <input type="text" name="bandit_path" class="form-control" value="{{ config.BANDIT_PATH }}">
+                    </div>
+                </div>
+            </div>
+            <hr>
+            <button type="submit" class="btn btn-primary">Save All Settings</button>
         </form>
-    {% endif %}
+    </div>
+</div>
 
-    <h2>Gemini Settings</h2>
-    <form action="/save_gemini_api_key" method="post">
-        <input type="text" name="gemini_api_key" placeholder="Gemini API Key" size="50">
-        <button type="submit">Save</button>
-    </form>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        function toggleProviderFields(provider, clientType) {
+            ['ollama', 'gemini', 'llama-cpp'].forEach(p => {
+                const fields = document.getElementById(`${clientType}-${p}-fields`);
+                if (fields) {
+                    fields.style.display = (p === provider) ? 'block' : 'none';
+                }
+            });
+        }
 
-    <h2>LLM Settings</h2>
-    <form action="/save_llm_settings" method="post">
-        <label for="llm_provider">LLM Provider:</label>
-        <select name="llm_provider" id="llm_provider">
-            <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama</option>
-            <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini</option>
-            <option value="llama.cpp" {% if llm_provider == 'llama.cpp' %}selected{% endif %}>Llama.cpp</option>
-        </select>
-        <br>
-        <label for="llama_cpp_model_path">Llama.cpp Model Path:</label>
-        <input type="text" name="llama_cpp_model_path" id="llama_cpp_model_path" value="{{ llama_cpp_model_path }}" size="50">
-        <br>
-        <label for="ollama_url">Ollama URL:</label>
-        <input type="text" name="ollama_url" id="ollama_url" value="{{ ollama_url }}" size="50">
-        <br>
-        <label for="gemini_model">Gemini Model:</label>
-        <input type="text" name="gemini_model" id="gemini_model" value="{{ gemini_model }}" size="50">
-        <br>
-        <button type="submit">Save LLM Settings</button>
-    </form>
-</body>
-</html>
+        function updateModelOptions(provider, clientType) {
+            const modelSelect = document.getElementById(`${clientType}-${provider}-model`);
+            if (!modelSelect) return;
+
+            fetch(`/api/models?provider=${provider}&client_type=${clientType}`)
+                .then(response => response.json())
+                .then(models => {
+                    modelSelect.innerHTML = '';
+                    models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelect.appendChild(option);
+                    });
+                });
+        }
+
+        ['scanner', 'patcher'].forEach(clientType => {
+            const providerSelect = document.getElementById(`${clientType}_llm_provider`);
+            if (providerSelect) {
+                providerSelect.addEventListener('change', function() {
+                    const provider = this.value;
+                    toggleProviderFields(provider, clientType);
+                    updateModelOptions(provider, clientType);
+                });
+                // Initial setup
+                toggleProviderFields(providerSelect.value, clientType);
+            }
+        });
+    });
+</script>
+{% endblock %}

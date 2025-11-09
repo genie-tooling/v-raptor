@@ -12,9 +12,9 @@ class TestOrchestrator(unittest.TestCase):
     def setUp(self):
         self.db_session_mock = MagicMock()
         self.vcs_service_mock = MagicMock()
-        self.orchestrator = Orchestrator(self.vcs_service_mock, self.db_session_mock)
+        self.orchestrator = Orchestrator(self.vcs_service_mock, self.db_session_mock, MagicMock())
 
-    @patch('src.orchestrator.di.google_web_search')
+    @patch('src.di.google_web_search')
     @patch('src.llm.LLMService.validate_vulnerability')
     def test_validate_vulnerability_with_search_false_positive(self, mock_validate_vulnerability, mock_google_web_search):
         """Test that validate_vulnerability_with_search correctly identifies a false positive."""
@@ -27,7 +27,7 @@ class TestOrchestrator(unittest.TestCase):
         result = self.orchestrator.validate_vulnerability_with_search(vulnerability)
         self.assertFalse(result)
 
-    @patch('src.orchestrator.di.google_web_search')
+    @patch('src.di.google_web_search')
     @patch('src.llm.LLMService.validate_vulnerability')
     def test_validate_vulnerability_with_search_not_false_positive(self, mock_validate_vulnerability, mock_google_web_search):
         """Test that validate_vulnerability_with_search correctly identifies a non-false positive."""

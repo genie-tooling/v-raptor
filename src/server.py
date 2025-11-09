@@ -1,21 +1,41 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash
+from sqlalchemy import func
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from redis import Redis
+from rq import Queue
 from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric
 from .orchestrator import Orchestrator
 from .vcs import VCSService
 from .llm import LLMService
-from .config import OLLAMA_MODEL, LLM_PROVIDER, LLAMA_CPP_MODEL_PATH, OLLAMA_URL, GEMINI_MODEL
+from . import config
 from . import di
 
 app = Flask(__name__, static_folder='static')
 app.secret_key = os.urandom(24)
 
+redis_host = os.getenv('REDIS_HOST', 'localhost')
+redis_conn = Redis(host=redis_host, port=6379)
+q = Queue(connection=redis_conn)
+
 try:
-    from google_search import search as google_web_search_tool
-    di.google_web_search = google_web_search_tool
-    print("Successfully imported the google_web_search tool for the web server.")
+    from googlesearch import search as google_search_tool
+
+    def google_web_search_adapter(query: str) -> str:
+        """
+        Performs a search and returns the top 5 results as a newline-separated string.
+        """
+        print(f"Performing web search for: '{query}'")
+        try:
+            results_iterator = google_search_tool(query, num_results=5)
+            return "\n".join(list(results_iterator))
+        except Exception as e:
+            print(f"Web search failed: {e}")
+            return ""
+
+    di.google_web_search = google_web_search_adapter
+    print("Successfully imported and configured the googlesearch-python tool for the web server.")
 except ImportError:
-    print("Could not import google_search for the web server. Web search will be disabled.")
+    print("Could not import googlesearch for the web server. Web search will be disabled.")
     def placeholder_search(query: str = ""): return ""
     di.google_web_search = placeholder_search
 
@@ -26,53 +46,124 @@ def save_gemini_api_key():
         f.write(api_key)
     return redirect(url_for('config'))
 
-@app.route('/save_ollama_model', methods=['POST'])
-def save_ollama_model():
-    ollama_model = request.form['ollama_model']
-    with open('src/config.py', 'r') as f:
-        lines = f.readlines()
-    with open('src/config.py', 'w') as f:
-        for line in lines:
-            if line.startswith('OLLAMA_MODEL'):
-                f.write(f"OLLAMA_MODEL = '{ollama_model}'\n")
-            else:
-                f.write(line)
-    return redirect(url_for('config'))
+@app.route('/api/models')
+def get_models():
+    provider = request.args.get('provider')
+    client_type = request.args.get('client_type')
+    llm_service = LLMService()
+    # Temporarily override the config to get the models for the requested provider
+    original_provider = getattr(config, f"{client_type.upper()}_LLM_PROVIDER")
+    setattr(config, f"{client_type.upper()}_LLM_PROVIDER", provider)
+    
+    models = []
+    try:
+        client = llm_service._initialize_client(client_type)
+        models = client.get_available_models()
+    except Exception as e:
+        print(f"Error getting models for provider {provider}: {e}")
+    finally:
+        # Restore the original provider
+        setattr(config, f"{client_type.upper()}_LLM_PROVIDER", original_provider)
+        
+    return jsonify(models)
 
-@app.route('/scan_ollama_models', methods=['POST'])
-def scan_ollama_models():
-    llm_service = LLMService(llm_provider='ollama')
-    models = llm_service.get_ollama_models()
-    return render_template('config.html', ollama_models=models, selected_ollama_model=OLLAMA_MODEL)
 
 @app.route('/config')
-def config():
-    return render_template('config.html', llm_provider=LLM_PROVIDER, llama_cpp_model_path=LLAMA_CPP_MODEL_PATH, ollama_url=OLLAMA_URL, gemini_model=GEMINI_MODEL)
+def config_page():
+    llm_service = LLMService()
+    scanner_models = llm_service.get_available_models('scanner')
+    patcher_models = llm_service.get_available_models('patcher')
+    return render_template('config.html', config=config, scanner_models=scanner_models, patcher_models=patcher_models)
 
 @app.route('/save_llm_settings', methods=['POST'])
 def save_llm_settings():
-    with open('src/config.py', 'r') as f:
-        lines = f.readlines()
-    with open('src/config.py', 'w') as f:
-        for line in lines:
-            if line.startswith('LLM_PROVIDER'):
-                f.write(f"LLM_PROVIDER = '{request.form['llm_provider']}'\n")
-            elif line.startswith('LLAMA_CPP_MODEL_PATH'):
-                f.write(f"LLAMA_CPP_MODEL_PATH = '{request.form['llama_cpp_model_path']}'\n")
-            elif line.startswith('OLLAMA_URL'):
-                f.write(f"OLLAMA_URL = '{request.form['ollama_url']}'\n")
-            elif line.startswith('GEMINI_MODEL'):
-                f.write(f"GEMINI_MODEL = '{request.form['gemini_model']}'\n")
-            else:
-                f.write(line)
-    return redirect(url_for('config'))
+    config_path = os.path.join(os.path.dirname(__file__), 'config.py')
+    
+    current_config_content = {}
+    with open(config_path, 'r') as f:
+        for line in f:
+            if '=' in line and not line.strip().startswith('#'):
+                key, value = line.split('=', 1)
+                current_config_content[key.strip()] = value.strip()
+    
+    with open(config_path, 'w') as f:
+        f.write("# src/config.py\n\n")
+        
+        f.write("# --- Scanner Model Configuration ---\n")
+        f.write(f"SCANNER_LLM_PROVIDER = '{request.form.get('scanner_llm_provider')}'\n")
+        f.write(f"SCANNER_LLAMA_CPP_MODEL_PATH = r'{request.form.get('scanner_llama_cpp_model_path')}'\n")
+        f.write(f"SCANNER_OLLAMA_MODEL = '{request.form.get('scanner_ollama_model')}'\n")
+        f.write(f"SCANNER_OLLAMA_URL = '{request.form.get('scanner_ollama_url')}'\n")
+        f.write(f"SCANNER_GEMINI_MODEL = '{request.form.get('scanner_gemini_model')}'\n\n")
+
+        f.write("# --- Patcher Model Configuration ---\n")
+        f.write(f"PATCHER_LLM_PROVIDER = '{request.form.get('patcher_llm_provider')}'\n")
+        f.write(f"PATCHER_LLAMA_CPP_MODEL_PATH = r'{request.form.get('patcher_llama_cpp_model_path')}'\n")
+        f.write(f"PATCHER_OLLAMA_MODEL = '{request.form.get('patcher_ollama_model')}'\n")
+        f.write(f"PATCHER_OLLAMA_URL = '{request.form.get('patcher_ollama_url')}'\n")
+        f.write(f"PATCHER_GEMINI_MODEL = '{request.form.get('patcher_gemini_model')}'\n\n")
+        
+        f.write("# --- Database Configuration ---\n")
+        database_url = current_config_content.get('DATABASE_URL', "'sqlite:///v-raptor.db'")
+        f.write(f"DATABASE_URL = {database_url}\n\n")
+
+        f.write("# --- Tool Paths ---\n")
+        f.write(f"GITLEAKS_PATH = '{request.form.get('gitleaks_path')}'\n")
+        f.write(f"SEMGREP_PATH = '{request.form.get('semgrep_path')}'\n")
+        f.write(f"BANDIT_PATH = '{request.form.get('bandit_path')}'\n")
+    
+    flash("Configuration saved successfully. You may need to restart the application for all changes to take effect.", 'success')
+    return redirect(url_for('config_page'))
+
+
+from rq.registry import FailedJobRegistry
+
+# ... (existing imports)
+
+@app.route('/failed_jobs')
+def failed_jobs():
+    registry = FailedJobRegistry(queue=q)
+    failed_jobs = []
+    for job_id in registry.get_job_ids():
+        job = q.fetch_job(job_id)
+        if job:
+            failed_jobs.append({
+                'id': job.id,
+                'func_name': job.func_name,
+                'args': job.args,
+                'kwargs': job.kwargs,
+                'exc_info': job.exc_info
+            })
+    return render_template('failed_jobs.html', failed_jobs=failed_jobs)
+
+@app.route('/reports')
+def reports():
+    session = get_session()()
+    top_vulnerabilities = session.query(Finding.description, func.count(Finding.id).label('count')).group_by(Finding.description).order_by(func.count(Finding.id).desc()).limit(5).all()
+    top_repos = session.query(Repository.id, Repository.name, func.count(Finding.id).label('count')).select_from(Repository).join(Scan).join(Finding).group_by(Repository.id, Repository.name).order_by(func.count(Finding.id).desc()).limit(5).all()
+    return render_template('reports.html', top_vulnerabilities=top_vulnerabilities, top_repos=top_repos)
+
+@app.route('/failed_jobs/<job_id>')
+def failed_job(job_id):
+    job = q.fetch_job(job_id)
+    return render_template('failed_job.html', job=job)
+
+from sqlalchemy import func
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from redis import Redis
+from rq import Queue
+from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric
+# ... (existing imports)
 
 @app.route('/dashboard')
 def dashboard():
     session = get_session()()
     orchestrator = Orchestrator(None, session, di.google_web_search)
     metrics = orchestrator.get_dashboard_metrics()
-    return render_template('dashboard.html', metrics=metrics)
+    recent_scans = session.query(Scan).order_by(Scan.created_at.desc()).limit(5).all()
+    findings_by_severity = orchestrator.get_findings_by_severity()
+    findings_by_repo = orchestrator.get_findings_by_repo()
+    return render_template('dashboard.html', metrics=metrics, recent_scans=recent_scans, findings_by_severity=findings_by_severity, findings_by_repo=findings_by_repo)
 
 @app.route('/')
 def index():
@@ -85,42 +176,29 @@ def add_repo():
     repo_url = request.form['repo_url']
     vcs_service = VCSService(git_provider='github', token='')
     base_url, detected_branch = vcs_service.parse_and_validate_repo_url(repo_url)
-
     if not base_url:
         flash(f"Error: Could not find a valid repository at '{repo_url}'. Please check the URL.", 'error')
         return redirect(url_for('index'))
-
     branches = vcs_service.get_branches(base_url)
     if not branches:
         flash(f"Error: Found repository '{base_url}' but could not fetch its branches.", 'error')
         return redirect(url_for('index'))
-
-    return render_template('select_branch.html',
-                           repo_url=base_url,
-                           branches=branches,
-                           selected_branch=detected_branch)
+    return render_template('select_branch.html', repo_url=base_url, branches=branches, selected_branch=detected_branch)
 
 @app.route('/confirm_add_repo', methods=['POST'])
 def confirm_add_repo():
     repo_url = request.form['repo_url']
-    selected_branch = request.form['branch'] 
+    selected_branch = request.form['branch']
     session = get_session()()
-    
     if session.query(Repository).filter_by(url=repo_url).first():
         flash(f"Repository '{repo_url}' is already being monitored.", 'info')
         return redirect(url_for('index'))
-
     repo_name = repo_url.split('/')[-1].replace('.git', '')
-    new_repo = Repository(
-        name=repo_name, 
-        url=repo_url, 
-        primary_branch=selected_branch
-    )
+    new_repo = Repository(name=repo_name, url=repo_url, primary_branch=selected_branch)
     session.add(new_repo)
     session.commit()
     flash(f"Successfully added repository '{repo_name}' (monitoring branch '{selected_branch}').", 'success')
     return redirect(url_for('index'))
-
 
 @app.route('/remove_repo/<int:repo_id>', methods=['POST'])
 def remove_repo(repo_id):
@@ -142,20 +220,77 @@ def quality(repo_id):
     session = get_session()()
     repo = session.query(Repository).get(repo_id)
     scan = session.query(Scan).filter_by(repository_id=repo_id, scan_type='quality').order_by(Scan.created_at.desc()).first()
-    if scan:
-        metrics = session.query(QualityMetric).filter_by(scan_id=scan.id).all()
-    else:
-        metrics = []
+    metrics = session.query(QualityMetric).filter_by(scan_id=scan.id).all() if scan else []
     return render_template('quality.html', repo=repo, metrics=metrics)
+
+@app.route('/api/scans')
+def api_scans():
+    session = get_session()()
+    scans = session.query(Scan).order_by(Scan.created_at.desc()).all()
+    scans_data = []
+    for scan in scans:
+        job = q.fetch_job(str(scan.id))
+        scans_data.append({
+            'id': scan.id,
+            'status': scan.status.value,
+            'job_id': job.id if job else None,
+        })
+    return jsonify(scans_data)
+
+@app.route('/scans')
+def scans():
+    session = get_session()()
+    scans = session.query(Scan).order_by(Scan.created_at.desc()).all()
+    return render_template('scans.html', scans=scans)
+
+@app.route('/findings')
+def findings():
+    session = get_session()()
+    findings = session.query(Finding).order_by(Finding.id.desc()).all()
+    return render_template('findings.html', findings=findings)
+
+@app.route('/findings/by_description')
+def findings_by_description():
+    description = request.args.get('description')
+    session = get_session()()
+    findings = session.query(Finding).filter_by(description=description).all()
+    return render_template('findings.html', findings=findings, title=f"Findings for '{description}'")
 
 @app.route('/run_scan/<int:repo_id>', methods=['POST'])
 def run_scan(repo_id):
     session = get_session()()
     repo = session.query(Repository).get(repo_id)
     if repo:
-        vcs_service = VCSService(git_provider='github', token='')
-        orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
-        orchestrator.run_deep_scan(repo.url)
+        auto_patch = 'auto_patch' in request.form
+        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, auto_patch=auto_patch)
+        scan = Scan(repository_id=repo.id, scan_type='deep', status='queued', job_id=job.id, auto_patch_enabled=auto_patch)
+        session.add(scan)
+        session.commit()
+        flash(f"Deep scan initiated for '{repo.name}'.", 'info')
+    return redirect(url_for('repository', repo_id=repo_id))
+
+@app.route('/run_quality_scan/<int:repo_id>', methods=['POST'])
+def run_quality_scan(repo_id):
+    session = get_session()()
+    repo = session.query(Repository).get(repo_id)
+    if repo:
+        job = q.enqueue('src.worker.run_quality_scan_job', repo_id)
+        scan = Scan(repository_id=repo.id, scan_type='quality', status='queued', job_id=job.id)
+        session.add(scan)
+        session.commit()
+        flash(f"Code quality scan initiated for repository.", 'info')
+    return redirect(url_for('repository', repo_id=repo_id))
+
+@app.route('/link_cves/<int:repo_id>', methods=['POST'])
+def link_cves(repo_id):
+    session = get_session()()
+    repo = session.query(Repository).get(repo_id)
+    if repo:
+        job = q.enqueue('src.worker.link_cves_to_findings_job', repo_id)
+        scan = Scan(repository_id=repo.id, scan_type='cve-linking', status='queued', job_id=job.id)
+        session.add(scan)
+        session.commit()
+        flash(f"CVE linking initiated for repository.", 'info')
     return redirect(url_for('repository', repo_id=repo_id))
 
 @app.route('/rerun_scan/<int:scan_id>', methods=['POST'])
@@ -163,19 +298,116 @@ def rerun_scan(scan_id):
     session = get_session()()
     scan = session.query(Scan).get(scan_id)
     if scan:
-        vcs_service = VCSService(git_provider='github', token='')
-        orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
         if scan.scan_type == 'commit':
-            orchestrator.run_analysis_on_commit(scan.repository.url, scan.triggering_commit_hash, scan.repository.id, wait_for_completion=False)
-        elif scan.scan_type in ['dependency', 'configuration', 'source', 'secret', 'quality']:
-            orchestrator.run_deep_scan(scan.repository.url)
+            job = q.enqueue('src.worker.run_analysis_job', scan.repository.url, scan.triggering_commit_hash, scan.repository.id, auto_patch=scan.auto_patch_enabled)
+        else:
+            job = q.enqueue('src.worker.run_deep_scan_job', scan.repository.url, auto_patch=scan.auto_patch_enabled)
+        scan.job_id = job.id
+        scan.status = 'queued'
+        session.commit()
+        flash(f"Rerunning scan {scan.id} for '{scan.repository.name}'.", 'info')
     return redirect(url_for('repository', repo_id=scan.repository.id))
+    
+@app.route('/generate_patch/<int:finding_id>', methods=['POST'])
+def generate_patch(finding_id):
+    session = get_session()()
+    vcs_service = VCSService(git_provider='github', token='')
+    orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
+    orchestrator.generate_patch_for_finding(finding_id)
+    flash(f"Patch generation initiated for Finding #{finding_id}.", 'info')
+    return redirect(url_for('finding', finding_id=finding_id))
+
+from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric, QualityInterpretation, ScanStatus
+# ...
+from rq.job import Job
+# ...
+@app.route('/stop_scan/<int:scan_id>', methods=['POST'])
+def stop_scan(scan_id):
+    session = get_session()()
+    scan = session.query(Scan).get(scan_id)
+    if scan and scan.job_id:
+        job = q.fetch_job(scan.job_id)
+        if job:
+            job.cancel()
+            scan.status = ScanStatus.FAILED
+            session.commit()
+            flash(f"Scan {scan_id} stopped.", 'success')
+        else:
+            flash(f"Job {scan.job_id} not found in queue.", 'error')
+    else:
+        flash(f"Scan {scan_id} not found or has no job ID.", 'error')
+    return redirect(url_for('scans'))
+
+@app.route('/delete_scan/<int:scan_id>', methods=['POST'])
+def delete_scan(scan_id):
+    session = get_session()()
+    scan = session.query(Scan).get(scan_id)
+    if scan:
+        session.delete(scan)
+        session.commit()
+        flash(f"Scan {scan_id} deleted.", 'success')
+    else:
+        flash(f"Scan {scan_id} not found.", 'error')
+    return redirect(url_for('scans'))
+
+@app.route('/mark_scan_failed/<int:scan_id>', methods=['POST'])
+def mark_scan_failed(scan_id):
+    session = get_session()()
+    scan = session.query(Scan).get(scan_id)
+    if scan:
+        scan.status = ScanStatus.FAILED
+        session.commit()
+        flash(f"Scan {scan_id} marked as failed.", 'success')
+    else:
+        flash(f"Scan {scan_id} not found.", 'error')
+    return redirect(url_for('scans'))
+
+@app.route('/chat_with_quality_interpretation/<int:interpretation_id>', methods=['POST'])
+def chat_with_quality_interpretation(interpretation_id):
+    data = request.get_json()
+    message = data.get('message')
+    if not message:
+        return jsonify({'error': 'Message is required'}), 400
+
+    orchestrator = Orchestrator(None, get_session()(), None)
+    response = orchestrator.chat_with_quality_interpretation(interpretation_id, message)
+    return jsonify({'response': response})
+
+@app.route('/quality_interpretation/<int:interpretation_id>')
+def quality_interpretation(interpretation_id):
+    session = get_session()()
+    interpretation = session.query(QualityInterpretation).get(interpretation_id)
+    metric = interpretation.quality_metric
+    return render_template('quality_interpretation.html', interpretation=interpretation, metric=metric)
+
+@app.route('/interpret_quality_metrics/<int:metric_id>')
+def interpret_quality_metrics(metric_id):
+    session = get_session()()
+    metric = session.query(QualityMetric).get(metric_id)
+    if not metric:
+        return jsonify({'error': 'Metric not found'})
+
+    if metric.interpretation:
+        return jsonify({'interpretation': metric.interpretation.interpretation, 'interpretation_id': metric.interpretation.id})
+
+    orchestrator = Orchestrator(None, session, None)
+    interpretation_text = orchestrator.llm_service.interpret_quality_metrics(metric)
+    
+    new_interpretation = QualityInterpretation(quality_metric_id=metric.id, interpretation=interpretation_text)
+    session.add(new_interpretation)
+    session.commit()
+
+    return jsonify({'interpretation': interpretation_text, 'interpretation_id': new_interpretation.id})
 
 @app.route('/scan/<int:scan_id>')
 def scan(scan_id):
     session = get_session()()
     scan = session.query(Scan).get(scan_id)
-    return render_template('scan.html', scan=scan)
+    app.logger.info(f"Scan type for scan {scan_id} is {scan.scan_type}")
+    if scan.scan_type == 'quality':
+        return render_template('quality.html', repo=scan.repository, metrics=scan.quality_metrics)
+    else:
+        return render_template('scan.html', scan=scan)
 
 @app.route('/finding/<int:finding_id>')
 def finding(finding_id):
@@ -183,6 +415,16 @@ def finding(finding_id):
     finding = session.query(Finding).get(finding_id)
     chat_history = session.query(ChatMessage).filter_by(finding_id=finding_id).order_by(ChatMessage.created_at).all()
     return render_template('finding.html', finding=finding, chat_history=chat_history)
+
+@app.route('/finding/<int:finding_id>/search_cve', methods=['POST'])
+def search_cve(finding_id):
+    session = get_session()()
+    finding = session.query(Finding).get(finding_id)
+    if finding:
+        orchestrator = Orchestrator(None, session, di.google_web_search)
+        orchestrator.search_cve_for_finding(finding)
+        flash("CVE search initiated. The finding will be updated shortly.", 'info')
+    return redirect(url_for('finding', finding_id=finding_id))
 
 @app.route('/recheck_finding/<int:finding_id>', methods=['POST'])
 def recheck_finding(finding_id):

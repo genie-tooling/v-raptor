@@ -41,8 +41,6 @@ def find_config_files(directory):
     return config_files
 
 if __name__ == '__main__':
-    # This is an example of how to use the scanner
-    # You would need to provide an LLMService instance
     from .config import LLM_PROVIDER
     llm = LLMService(llm_provider=LLM_PROVIDER)
     

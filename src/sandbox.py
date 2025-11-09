@@ -1,6 +1,6 @@
 import docker
-import tempfile
-import os
+import io
+import tarfile
 
 class SandboxService:
     def __init__(self):
@@ -56,12 +56,18 @@ class SandboxService:
         try:
             container = self.client.containers.get(container_id)
             
+            # Create a tar archive in memory
+            pw_tarstream = io.BytesIO()
+            pw_tar = tarfile.TarFile(fileobj=pw_tarstream, mode='w')
+            file_data = script_code.encode('utf8')
+            tarinfo = tarfile.TarInfo(name='test_script.py')
+            tarinfo.size = len(file_data)
+            pw_tar.addfile(tarinfo, io.BytesIO(file_data))
+            pw_tar.close()
+            pw_tarstream.seek(0)
+
             # Use put_archive to copy the script file into the container
-            # This is more reliable than 'docker cp' via os.system
-            with tempfile.NamedTemporaryFile(mode='w', suffix=".py", delete=True) as tmp_script:
-                tmp_script.write(script_code)
-                tmp_script.seek(0)
-                os.system(f"docker cp {tmp_script.name} {container_id}:{script_path_container}")
+            container.put_archive('/app/', pw_tarstream)
 
             # Execute the script
             return self.execute_in_sandbox(container_id, f'python3 {script_path_container}')
@@ -72,7 +78,8 @@ class SandboxService:
 
     def destroy_sandbox(self, container_id):
         """Stops and removes the sandbox container."""
-        if not container_id: return
+        if not container_id:
+            return
         try:
             print(f"Destroying sandbox: {container_id[:12]}")
             container = self.client.containers.get(container_id)

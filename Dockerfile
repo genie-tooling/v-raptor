@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y \
     build-essential \
+    ninja-build \
     python3 \
     python3-pip \
     git \
@@ -25,14 +26,17 @@ RUN GITLEAKS_VERSION=$(curl -s "https://api.github.com/repos/gitleaks/gitleaks/r
     mv gitleaks /usr/local/bin/gitleaks && \
     rm gitleaks.tar.gz
 
-# Other tool placeholders (install as needed)
-# Example for Nikto:
-# RUN apt-get update && apt-get install -y nikto
-# Example for SQLMap:
-# RUN apt-get update && apt-get install -y sqlmap
-
 # Create a working directory
 WORKDIR /app
+
+# Copy the application code
+COPY . /app
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Expose the web server port
+EXPOSE 5000
 
 # A command to keep the container running if started directly
 CMD ["tail", "-f", "/dev/null"]

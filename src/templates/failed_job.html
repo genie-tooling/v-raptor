@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block title %}Failed Job {{ job.id }}{% endblock %}
+{% block content %}
+<h1>Failed Job {{ job.id }}</h1>
+<div class="card">
+    <div class="card-header">Job Details</div>
+    <div class="card-body">
+        <p><strong>Job ID:</strong> {{ job.id }}</p>
+        <p><strong>Function:</strong> {{ job.func_name }}</p>
+        <p><strong>Arguments:</strong> {{ job.args }}</p>
+        <p><strong>Keyword Arguments:</strong> {{ job.kwargs }}</p>
+        <p><strong>Created At:</strong> {{ job.created_at }}</p>
+        <p><strong>Enqueued At:</strong> {{ job.enqueued_at }}</p>
+        <p><strong>Ended At:</strong> {{ job.ended_at }}</p>
+        <p><strong>Origin:</strong> {{ job.origin }}</p>
+        <p><strong>Status:</strong> {{ job.get_status() }}</p>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">Exception Information</div>
+    <div class="card-body">
+        <pre>{{ job.exc_info }}</pre>
+    </div>
+</div>
+{% endblock %}

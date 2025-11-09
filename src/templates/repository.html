@@ -1,25 +1,80 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{{ repo.name }} - V-Raptor Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "layout.html" %}
+{% block title %}{{ repo.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
     <h1>{{ repo.name }}</h1>
-    <a href="/repository/{{ repo.id }}/quality">Code Quality Report</a>
-    <h2>Scans</h2>
-    <form action="/run_scan/{{ repo.id }}" method="post">
-        <button type="submit">Run New Scan</button>
-    </form>
-    <ul>
-        {% for scan in repo.scans %}
-            <li>
-                <a href="/scan/{{ scan.id }}">Scan #{{ scan.id }} - {{ scan.scan_type }} - {{ scan.status }}</a>
-                <form action="/rerun_scan/{{ scan.id }}" method="post" style="display: inline;">
-                    <button type="submit">Re-run Scan</button>
-                </form>
-            </li>
-        {% endfor %}
-    </ul>
-</body>
-</html>
+    <div>
+        <a href="/repository/{{ repo.id }}/quality" class="btn btn-info">Code Quality Report</a>
+        <a href="/" class="btn btn-secondary">Back to Repositories</a>
+    </div>
+</div>
+
+
+<div class="card border-primary mb-3">
+    <div class="card-header">Run New Scan</div>
+    <div class="card-body">
+        <form action="/run_scan/{{ repo.id }}" method="post" style="display: inline;">
+            <button type="submit" class="btn btn-primary">Run New Deep Scan</button>
+            <div class="form-check form-switch d-inline-block ms-3">
+                <input class="form-check-input" type="checkbox" name="auto_patch" value="true" id="autoPatchSwitch">
+                <label class="form-check-label" for="autoPatchSwitch">Automatically Generate Patches</label>
+            </div>
+        </form>
+        <form action="/link_cves/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+            <button type="submit" class="btn btn-info">Link CVEs to Findings</button>
+        </form>
+        <form action="/run_quality_scan/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+            <button type="submit" class="btn btn-warning">Run Code Quality Scan</button>
+        </form>
+    </div>
+</div>
+
+<div class="card border-secondary">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        Scan History
+        <a href="{{ url_for('repository', repo_id=repo.id) }}" class="btn btn-sm btn-outline-light">&#x21bb; Refresh</a>
+    </div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th scope="col">Scan ID</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Commit</th>
+                    <th scope="col">Created At</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in repo.scans|sort(attribute='created_at', reverse=True) %}
+                <tr>
+                    <td><a href="/scan/{{ scan.id }}">#{{ scan.id }}</a></td>
+                    <td>{{ scan.scan_type }}</td>
+                    <td>
+                        {% if scan.status.value == 'running' %}
+                            <span class="badge bg-info">Running...</span>
+                        {% elif scan.status.value == 'completed' %}
+                            <span class="badge bg-success">Completed</span>
+                        {% elif scan.status.value == 'queued' %}
+                            <span class="badge bg-secondary">Queued</span>
+                        {% elif scan.status.value == 'failed' %}
+                            <span class="badge bg-danger">Failed</span>
+                        {% else %}
+                            <span class="badge bg-dark">{{ scan.status.value }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ scan.triggering_commit_hash[:7] if scan.triggering_commit_hash else 'N/A' }}</td>
+                    <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>
+                        <form action="/rerun_scan/{{ scan.id }}" method="post" style="display: inline;">
+                            <button type="submit" class="btn btn-primary btn-sm">Re-run Scan</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

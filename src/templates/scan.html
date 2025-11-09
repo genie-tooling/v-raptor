@@ -1,16 +1,83 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Scan #{{ scan.id }} - V-Raptor Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "layout.html" %}
+{% block title %}Scan #{{ scan.id }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Scan #{{ scan.id }}</h1>
-    <h2>Findings</h2>
-    <ul>
-        {% for finding in scan.findings %}
-            <li><a href="/finding/{{ finding.id }}">{{ finding.description }}</a></li>
-        {% endfor %}
-    </ul>
-</body>
-</html>
+    <a href="/repository/{{ scan.repository.id }}" class="btn btn-secondary">Back to Repository</a>
+</div>
+
+<div class="card border-primary mb-3">
+    <div class="card-header">Scan Details</div>
+    <div class="card-body">
+        <p><strong>Repository:</strong> <a href="/repository/{{ scan.repository.id }}">{{ scan.repository.name }}</a></p>
+        <p><strong>Status:</strong>
+            {% if scan.status.value == 'running' %}
+                <span class="badge bg-info">Running...</span>
+            {% elif scan.status.value == 'completed' %}
+                <span class="badge bg-success">Completed</span>
+            {% elif scan.status.value == 'queued' %}
+                <span class="badge bg-secondary">Queued</span>
+            {% elif scan.status.value == 'failed' %}
+                <span class="badge bg-danger">Failed</span>
+            {% else %}
+                <span class="badge bg-dark">{{ scan.status.value }}</span>
+            {% endif %}
+        </p>
+        <p><strong>Type:</strong> {{ scan.scan_type }}</p>
+        <p><strong>Auto-Patching Enabled:</strong> {{ 'Yes' if scan.auto_patch_enabled else 'No' }}</p>
+    </div>
+</div>
+
+<div class="card border-secondary">
+    <div class="card-header">Findings</div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th scope="col">Description</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in scan.findings %}
+                <tr>
+                    <td><a href="/finding/{{ finding.id }}">{{ finding.description }}</a></td>
+                    <td>{{ finding.file_path }}</td>
+                    <td>{{ finding.line_number }}</td>
+                    <td>
+                        {% if finding.severity == 'CRITICAL' %}
+                            <span class="badge bg-danger">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'HIGH' %}
+                            <span class="badge bg-warning">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'MEDIUM' %}
+                            <span class="badge bg-info">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'LOW' %}
+                            <span class="badge bg-success">{{ finding.severity }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ finding.severity or 'N/A' }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4">No findings for this scan.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const isRunning = '{{ scan.status.value }}' === 'running';
+        if (isRunning) {
+            setTimeout(() => {
+                location.reload();
+            }, 5000);
+        }
+    });
+</script>
+{% endblock %}

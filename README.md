@@ -18,6 +18,7 @@ V-Raptor is an AI agent for automated code analysis, bug detection, and remediat
 - Python 3.10 or later
 - Docker
 - Go
+- Redis
 
 ### Installation
 
@@ -37,6 +38,20 @@ Also initialize the DB:
 ```
 ./run.sh --init-db
 ```
+
+### Running with Docker Compose
+
+V-Raptor can be run with Docker Compose, which will build the Docker image and start the web server, worker, and Redis.
+
+1. Start the application:
+
+```
+docker-compose up --build
+```
+
+This will build the Docker image, start the containers, and show the logs. To run in the background, use `docker-compose up -d --build`.
+
+2. Open your browser and go to `http://localhost:5000`.
 
 ## Usage
 

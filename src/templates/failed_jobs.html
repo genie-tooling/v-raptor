@@ -1,0 +1,30 @@
+<!-- templates/failed_jobs.html -->
+{% extends "layout.html" %}
+{% block title %}Failed Jobs{% endblock %}
+{% block content %}
+  <div class="container">
+    <h2 class="mt-4">Failed Jobs</h2>
+    <table class="table table-hover mt-4">
+      <thead>
+        <tr>
+          <th>Job ID</th>
+          <th>Function</th>
+          <th>Arguments</th>
+          <th>Keyword Arguments</th>
+          <th>Exception</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in failed_jobs %}
+          <tr>
+            <td><a href="/failed_jobs/{{ job.id }}">{{ job.id }}</a></td>
+            <td>{{ job.func_name }}</td>
+            <td>{{ job.args }}</td>
+            <td>{{ job.kwargs }}</td>
+            <td><pre>{{ job.exc_info }}</pre></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

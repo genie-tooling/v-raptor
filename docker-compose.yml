@@ -1,0 +1,30 @@
+version: '3.8'
+services:
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+  web:
+    build: .
+    network_mode: "host"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./v-raptor.db:/app/v-raptor.db
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=localhost
+    command: ["python3", "-m", "flask", "--app", "src.server", "run", "--host=0.0.0.0"]
+  worker:
+    build: .
+    network_mode: "host"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./v-raptor.db:/app/v-raptor.db
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=localhost
+    command: ["python3", "-m", "src.worker"]

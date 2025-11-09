@@ -21,11 +21,25 @@ def main():
         return
 
     try:
-        from google_search import search as google_web_search_tool
-        di.google_web_search = google_web_search_tool
-        print("Successfully imported the google_web_search tool.")
+        from googlesearch import search as google_search_tool
+
+        def google_web_search_adapter(query: str) -> str:
+            """
+            Performs a search and returns the top 5 results as a newline-separated string.
+            """
+            print(f"Performing web search for: '{query}'")
+            try:
+                # The search tool returns a generator, so we collect a few results
+                results_iterator = google_search_tool(query, num_results=5)
+                return "\n".join(list(results_iterator))
+            except Exception as e:
+                print(f"Web search failed: {e}")
+                return ""
+
+        di.google_web_search = google_web_search_adapter
+        print("Successfully imported and configured the googlesearch-python tool.")
     except ImportError:
-        print("Could not import the google_search tool. Web search validation will be disabled.")
+        print("Could not import the googlesearch tool. Web search validation will be disabled.")
         def placeholder_search(query: str = "") -> str:
             print("Warning: Web search is not available in this environment. Returning no results.")
             return ""

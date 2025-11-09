@@ -67,6 +67,34 @@ class VCSService:
             print(f"An unexpected error occurred while fetching branches: {e}")
             return []
 
+    def get_primary_branch(self, repo_url: str) -> str:
+        """
+        Gets the primary branch name for a given remote repository URL without cloning it.
+        Returns the primary branch name as a string, or None if it cannot be determined.
+        """
+        if not repo_url:
+            return None
+        try:
+            result = subprocess.check_output(
+                ['git', 'ls-remote', '--symref', repo_url, 'HEAD'],
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            # The output looks like:
+            # ref: refs/heads/main	HEAD
+            # <hash>	HEAD
+            # We are interested in the first line.
+            match = re.search(r'ref: refs/heads/(\S+)\s+HEAD', result)
+            if match:
+                return match.group(1)
+            return None
+        except subprocess.CalledProcessError as e:
+            print(f"Error fetching primary branch for {repo_url}: {e.stderr}")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred while fetching primary branch: {e}")
+            return None
+
     def is_valid_git_url(self, repo_url):
         """Checks if a given URL is a valid git repository URL."""
         if os.path.isdir(repo_url) and os.path.isdir(os.path.join(repo_url, '.git')):

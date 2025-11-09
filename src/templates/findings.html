@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block title %}All Findings{% endblock %}
+{% block content %}
+<h1>{{ title or 'All Findings' }}</h1>
+<div class="card border-secondary">
+    <div class="card-header">Findings</div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th scope="col">ID</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Repository</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in findings %}
+                <tr>
+                    <td><a href="/finding/{{ finding.id }}">#{{ finding.id }}</a></td>
+                    <td>{{ finding.description }}</td>
+                    <td><a href="/repository/{{ finding.scan.repository.id }}">{{ finding.scan.repository.name }}</a></td>
+                    <td>{{ finding.file_path }}</td>
+                    <td>{{ finding.line_number }}</td>
+                    <td>
+                        {% if finding.severity == 'CRITICAL' %}
+                            <span class="badge bg-danger">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'HIGH' %}
+                            <span class="badge bg-warning">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'MEDIUM' %}
+                            <span class="badge bg-info">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'LOW' %}
+                            <span class="badge bg-success">{{ finding.severity }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ finding.severity or 'N/A' }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

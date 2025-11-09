@@ -1,0 +1,102 @@
+{% extends "layout.html" %}
+{% block title %}Quality Interpretation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Quality Interpretation for {{ metric.file_path }}</h1>
+    <a href="/scan/{{ metric.scan_id }}" class="btn btn-secondary">Back to Scan</a>
+</div>
+
+<div class="card border-secondary mb-4">
+    <div class="card-header">Metrics</div>
+    <div class="card-body">
+        <table class="table table-sm">
+            <tbody>
+                <tr>
+                    <th scope="row">Cyclomatic Complexity</th>
+                    <td>{{ metric.cyclomatic_complexity }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Code Churn</th>
+                    <td>{{ metric.code_churn }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">SLOC</th>
+                    <td>{{ metric.sloc }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">LLOC</th>
+                    <td>{{ metric.lloc }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Comments</th>
+                    <td>{{ metric.comments }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Halstead Volume</th>
+                    <td>{{ metric.halstead_volume }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card border-primary mb-4">
+    <div class="card-header">Interpretation</div>
+    <div class="card-body">
+        <p>{{ interpretation.interpretation }}</p>
+    </div>
+</div>
+
+<div class="card border-info">
+    <div class="card-header">Chat</div>
+    <div class="card-body">
+        <div id="chat-history" class="mb-3" style="max-height: 400px; overflow-y: auto;">
+            {% for message in interpretation.chat_messages %}
+            <div class="mb-2">
+                <strong>{{ message.sender.capitalize() }}:</strong>
+                <p>{{ message.message }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        <form id="chat-form">
+            <div class="input-group">
+                <input type="text" id="chat-message" class="form-control" placeholder="Ask a question...">
+                <button type="submit" class="btn btn-primary">Send</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('chat-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const messageInput = document.getElementById('chat-message');
+    const message = messageInput.value;
+    messageInput.value = '';
+
+    fetch('/chat_with_quality_interpretation/{{ interpretation.id }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: message })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const chatHistory = document.getElementById('chat-history');
+        
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.classList.add('mb-2');
+        userMessageDiv.innerHTML = `<strong>User:</strong><p>${message}</p>`;
+        chatHistory.appendChild(userMessageDiv);
+
+        const assistantMessageDiv = document.createElement('div');
+        assistantMessageDiv.classList.add('mb-2');
+        assistantMessageDiv.innerHTML = `<strong>Assistant:</strong><p>${data.response}</p>`;
+        chatHistory.appendChild(assistantMessageDiv);
+
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    });
+});
+</script>
+{% endblock %}
