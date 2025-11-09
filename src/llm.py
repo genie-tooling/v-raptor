@@ -300,15 +300,15 @@ Search Results:
 Respond with a JSON object with a single key, "false_positive", which is a boolean. Do not include any explanations or ask any questions."""
         return self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
 
-    def validate_cve(self, cve, file_paths):
+    def validate_cve(self, cve, technologies):
         """Validates if a CVE is relevant to a repository."""
-        prompt = f"""You are a senior security engineer. Based on the following CVE and the file paths from a repository, determine if the CVE is relevant to the repository.
+        prompt = f"""You are a senior security engineer. Based on the following CVE and the technologies used in a repository, determine if the CVE is relevant to the repository.
 
 CVE ID: {cve['id']}
 CVE Description: {cve['description']}
 
-File paths:
-{", ".join(file_paths)}
+Technologies:
+{", ".join(technologies)}
 
 Respond with a JSON object with a single key, "relevant", which is a boolean. Do not include any explanations or ask any questions.
 Example:

@@ -482,5 +482,35 @@ def ci_scan():
     else:
         return {'status': 'success', 'message': 'No high or critical severity findings found.'}
 
-if __name__ == '__main__':
-    app.run(debug=True)
+def synchronize_scan_statuses():
+    """Synchronizes the scan statuses with the RQ queue."""
+    with app.app_context():
+        session = get_session()()
+        scans = session.query(Scan).filter(Scan.status.in_([ScanStatus.RUNNING, ScanStatus.QUEUED])).all()
+        app.logger.info(f"Found {len(scans)} running or queued scans to synchronize.")
+        for scan in scans:
+            if scan.job_id:
+                job = q.fetch_job(scan.job_id)
+                app.logger.info(f"Checking job {scan.job_id} for scan {scan.id}. Job status: {job.get_status() if job else 'not found'}")
+                if job is None or job.get_status() == 'failed':
+                    app.logger.info(f"Updating scan {scan.id} to FAILED.")
+                    scan.status = ScanStatus.FAILED
+                    session.commit()
+        app.logger.info("Synchronization complete.")
+
+def periodic_sync():
+    """Periodically synchronizes the scan statuses."""
+    import time
+    while True:
+        synchronize_scan_statuses()
+        time.sleep(60)
+
+@app.before_request
+def start_sync_thread():
+    import threading
+    if not hasattr(app, 'sync_thread_started'):
+        app.sync_thread_started = True
+        sync_thread = threading.Thread(target=periodic_sync)
+        sync_thread.daemon = True
+        sync_thread.start()
+        app.logger.info("Started background thread for scan status synchronization.")
