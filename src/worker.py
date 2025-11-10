@@ -142,10 +142,14 @@ def run_analysis_job(repo_url, commit_hash, repo_id, auto_patch=False):
 
 def start_worker():
     """Starts the RQ worker."""
-    with Connection(redis_conn):
-        worker = Worker(map(Queue, listen))
-        logging.info(f"RQ Worker started. Listening on queues: {', '.join(listen)}")
-        worker.work()
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    try:
+        with Connection(redis_conn):
+            worker = Worker(map(Queue, listen))
+            logging.info(f"RQ Worker started. Listening on queues: {', '.join(listen)}")
+            worker.work()
+    except Exception as e:
+        logging.error("Worker crashed with an exception.", exc_info=True)
 
 if __name__ == '__main__':
     start_worker()

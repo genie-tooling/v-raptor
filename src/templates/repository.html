@@ -35,46 +35,9 @@
         <a href="{{ url_for('repository', repo_id=repo.id) }}" class="btn btn-sm btn-outline-light">&#x21bb; Refresh</a>
     </div>
     <div class="card-body">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th scope="col">Scan ID</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Commit</th>
-                    <th scope="col">Created At</th>
-                    <th scope="col">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for scan in repo.scans|sort(attribute='created_at', reverse=True) %}
-                <tr>
-                    <td><a href="/scan/{{ scan.id }}">#{{ scan.id }}</a></td>
-                    <td>{{ scan.scan_type }}</td>
-                    <td>
-                        {% if scan.status.value == 'running' %}
-                            <span class="badge bg-info">Running...</span>
-                        {% elif scan.status.value == 'completed' %}
-                            <span class="badge bg-success">Completed</span>
-                        {% elif scan.status.value == 'queued' %}
-                            <span class="badge bg-secondary">Queued</span>
-                        {% elif scan.status.value == 'failed' %}
-                            <span class="badge bg-danger">Failed</span>
-                        {% else %}
-                            <span class="badge bg-dark">{{ scan.status.value }}</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ scan.triggering_commit_hash[:7] if scan.triggering_commit_hash else 'N/A' }}</td>
-                    <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                    <td>
-                        <form action="/rerun_scan/{{ scan.id }}" method="post" style="display: inline;">
-                            <button type="submit" class="btn btn-primary btn-sm">Re-run Scan</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        {% with scans = scans_as_list|sort(attribute='created_at', reverse=True) %}
+            {% include '_scans_table.html' %}
+        {% endwith %}
     </div>
 </div>
 {% endblock %}

@@ -1,6 +1,7 @@
 import os
 from sqlalchemy import func
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from sqlalchemy.orm import selectinload
+from flask import g, Flask, render_template, request, redirect, url_for, flash, jsonify
 from redis import Redis
 from rq import Queue
 from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric
@@ -36,7 +37,8 @@ try:
     print("Successfully imported and configured the googlesearch-python tool for the web server.")
 except ImportError:
     print("Could not import googlesearch for the web server. Web search will be disabled.")
-    def placeholder_search(query: str = ""): return ""
+    def placeholder_search(query: str = ""):
+        return ""
     di.google_web_search = placeholder_search
 
 @app.route('/save_gemini_api_key', methods=['POST'])
@@ -89,25 +91,29 @@ def save_llm_settings():
     with open(config_path, 'w') as f:
         f.write("# src/config.py\n\n")
         
-        f.write("# --- Scanner Model Configuration ---\n")
+        f.write("# --- Scanner Model Configuration ---\
+")
         f.write(f"SCANNER_LLM_PROVIDER = '{request.form.get('scanner_llm_provider')}'\n")
         f.write(f"SCANNER_LLAMA_CPP_MODEL_PATH = r'{request.form.get('scanner_llama_cpp_model_path')}'\n")
         f.write(f"SCANNER_OLLAMA_MODEL = '{request.form.get('scanner_ollama_model')}'\n")
         f.write(f"SCANNER_OLLAMA_URL = '{request.form.get('scanner_ollama_url')}'\n")
         f.write(f"SCANNER_GEMINI_MODEL = '{request.form.get('scanner_gemini_model')}'\n\n")
 
-        f.write("# --- Patcher Model Configuration ---\n")
+        f.write("# --- Patcher Model Configuration ---\
+")
         f.write(f"PATCHER_LLM_PROVIDER = '{request.form.get('patcher_llm_provider')}'\n")
         f.write(f"PATCHER_LLAMA_CPP_MODEL_PATH = r'{request.form.get('patcher_llama_cpp_model_path')}'\n")
         f.write(f"PATCHER_OLLAMA_MODEL = '{request.form.get('patcher_ollama_model')}'\n")
         f.write(f"PATCHER_OLLAMA_URL = '{request.form.get('patcher_ollama_url')}'\n")
         f.write(f"PATCHER_GEMINI_MODEL = '{request.form.get('patcher_gemini_model')}'\n\n")
         
-        f.write("# --- Database Configuration ---\n")
+        f.write("# --- Database Configuration ---\
+")
         database_url = current_config_content.get('DATABASE_URL', "'sqlite:///v-raptor.db'")
         f.write(f"DATABASE_URL = {database_url}\n\n")
 
-        f.write("# --- Tool Paths ---\n")
+        f.write("# --- Tool Paths ---\
+")
         f.write(f"GITLEAKS_PATH = '{request.form.get('gitleaks_path')}'\n")
         f.write(f"SEMGREP_PATH = '{request.form.get('semgrep_path')}'\n")
         f.write(f"BANDIT_PATH = '{request.form.get('bandit_path')}'\n")
@@ -138,7 +144,7 @@ def failed_jobs():
 
 @app.route('/reports')
 def reports():
-    session = get_session()()
+    session = g.db_session
     top_vulnerabilities = session.query(Finding.description, func.count(Finding.id).label('count')).group_by(Finding.description).order_by(func.count(Finding.id).desc()).limit(5).all()
     top_repos = session.query(Repository.id, Repository.name, func.count(Finding.id).label('count')).select_from(Repository).join(Scan).join(Finding).group_by(Repository.id, Repository.name).order_by(func.count(Finding.id).desc()).limit(5).all()
     return render_template('reports.html', top_vulnerabilities=top_vulnerabilities, top_repos=top_repos)
@@ -157,7 +163,7 @@ from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage
 
 @app.route('/dashboard')
 def dashboard():
-    session = get_session()()
+    session = g.db_session
     orchestrator = Orchestrator(None, session, di.google_web_search)
     metrics = orchestrator.get_dashboard_metrics()
     recent_scans = session.query(Scan).order_by(Scan.created_at.desc()).limit(5).all()
@@ -167,7 +173,7 @@ def dashboard():
 
 @app.route('/')
 def index():
-    session = get_session()()
+    session = g.db_session
     repos = session.query(Repository).all()
     return render_template('index.html', repos=repos)
 
@@ -189,7 +195,7 @@ def add_repo():
 def confirm_add_repo():
     repo_url = request.form['repo_url']
     selected_branch = request.form['branch']
-    session = get_session()()
+    session = g.db_session
     if session.query(Repository).filter_by(url=repo_url).first():
         flash(f"Repository '{repo_url}' is already being monitored.", 'info')
         return redirect(url_for('index'))
@@ -202,7 +208,7 @@ def confirm_add_repo():
 
 @app.route('/remove_repo/<int:repo_id>', methods=['POST'])
 def remove_repo(repo_id):
-    session = get_session()()
+    session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
         session.delete(repo)
@@ -211,13 +217,23 @@ def remove_repo(repo_id):
 
 @app.route('/repository/<int:repo_id>')
 def repository(repo_id):
-    session = get_session()()
-    repo = session.query(Repository).get(repo_id)
-    return render_template('repository.html', repo=repo)
+    session = g.db_session
+    repo = session.query(Repository).options(
+        selectinload(Repository.scans)
+    ).filter_by(id=repo_id).one()
+    
+    if not repo:
+        flash(f"Repository with ID {repo_id} not found.", "error")
+        return redirect(url_for('index'))
+    scans_as_list = list(repo.scans)
+    print(f"--- DEBUG: Found repository: {repo.name} ---")
+    print(f"--- DEBUG: Scans object from relation: {repo.scans} ---")
+    print(f"--- DEBUG: Number of scans found: {len(repo.scans)} ---")
+    return render_template('repository.html', repo=repo, scans_as_list=scans_as_list)
 
 @app.route('/repository/<int:repo_id>/quality')
 def quality(repo_id):
-    session = get_session()()
+    session = g.db_session
     repo = session.query(Repository).get(repo_id)
     scan = session.query(Scan).filter_by(repository_id=repo_id, scan_type='quality').order_by(Scan.created_at.desc()).first()
     metrics = session.query(QualityMetric).filter_by(scan_id=scan.id).all() if scan else []
@@ -225,7 +241,7 @@ def quality(repo_id):
 
 @app.route('/api/scans')
 def api_scans():
-    session = get_session()()
+    session = g.db_session
     scans = session.query(Scan).order_by(Scan.created_at.desc()).all()
     scans_data = []
     for scan in scans:
@@ -239,30 +255,30 @@ def api_scans():
 
 @app.route('/scans')
 def scans():
-    session = get_session()()
+    session = g.db_session
     scans = session.query(Scan).order_by(Scan.created_at.desc()).all()
     return render_template('scans.html', scans=scans)
 
 @app.route('/findings')
 def findings():
-    session = get_session()()
+    session = g.db_session
     findings = session.query(Finding).order_by(Finding.id.desc()).all()
     return render_template('findings.html', findings=findings)
 
 @app.route('/findings/by_description')
 def findings_by_description():
     description = request.args.get('description')
-    session = get_session()()
+    session = g.db_session
     findings = session.query(Finding).filter_by(description=description).all()
     return render_template('findings.html', findings=findings, title=f"Findings for '{description}'")
 
 @app.route('/run_scan/<int:repo_id>', methods=['POST'])
 def run_scan(repo_id):
-    session = get_session()()
+    session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
         auto_patch = 'auto_patch' in request.form
-        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, auto_patch=auto_patch)
+        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, auto_patch=auto_patch, job_timeout=600)
         scan = Scan(repository_id=repo.id, scan_type='deep', status='queued', job_id=job.id, auto_patch_enabled=auto_patch)
         session.add(scan)
         session.commit()
@@ -271,10 +287,10 @@ def run_scan(repo_id):
 
 @app.route('/run_quality_scan/<int:repo_id>', methods=['POST'])
 def run_quality_scan(repo_id):
-    session = get_session()()
+    session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
-        job = q.enqueue('src.worker.run_quality_scan_job', repo_id)
+        job = q.enqueue('src.worker.run_quality_scan_job', repo_id, job_timeout=600)
         scan = Scan(repository_id=repo.id, scan_type='quality', status='queued', job_id=job.id)
         session.add(scan)
         session.commit()
@@ -283,10 +299,10 @@ def run_quality_scan(repo_id):
 
 @app.route('/link_cves/<int:repo_id>', methods=['POST'])
 def link_cves(repo_id):
-    session = get_session()()
+    session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
-        job = q.enqueue('src.worker.link_cves_to_findings_job', repo_id)
+        job = q.enqueue('src.worker.link_cves_to_findings_job', repo_id, job_timeout=600)
         scan = Scan(repository_id=repo.id, scan_type='cve-linking', status='queued', job_id=job.id)
         session.add(scan)
         session.commit()
@@ -295,13 +311,13 @@ def link_cves(repo_id):
 
 @app.route('/rerun_scan/<int:scan_id>', methods=['POST'])
 def rerun_scan(scan_id):
-    session = get_session()()
+    session = g.db_session
     scan = session.query(Scan).get(scan_id)
     if scan:
         if scan.scan_type == 'commit':
-            job = q.enqueue('src.worker.run_analysis_job', scan.repository.url, scan.triggering_commit_hash, scan.repository.id, auto_patch=scan.auto_patch_enabled)
+            job = q.enqueue('src.worker.run_analysis_job', scan.repository.url, scan.triggering_commit_hash, scan.repository.id, auto_patch=scan.auto_patch_enabled, job_timeout=600)
         else:
-            job = q.enqueue('src.worker.run_deep_scan_job', scan.repository.url, auto_patch=scan.auto_patch_enabled)
+            job = q.enqueue('src.worker.run_deep_scan_job', scan.repository.url, auto_patch=scan.auto_patch_enabled, job_timeout=600)
         scan.job_id = job.id
         scan.status = 'queued'
         session.commit()
@@ -310,7 +326,7 @@ def rerun_scan(scan_id):
     
 @app.route('/generate_patch/<int:finding_id>', methods=['POST'])
 def generate_patch(finding_id):
-    session = get_session()()
+    session = g.db_session
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
     orchestrator.generate_patch_for_finding(finding_id)
@@ -323,7 +339,7 @@ from rq.job import Job
 # ...
 @app.route('/stop_scan/<int:scan_id>', methods=['POST'])
 def stop_scan(scan_id):
-    session = get_session()()
+    session = g.db_session
     scan = session.query(Scan).get(scan_id)
     if scan and scan.job_id:
         job = q.fetch_job(scan.job_id)
@@ -338,9 +354,9 @@ def stop_scan(scan_id):
         flash(f"Scan {scan_id} not found or has no job ID.", 'error')
     return redirect(url_for('scans'))
 
-@app.route('/delete_scan/<int:scan_id>', methods=['POST'])
+@app.route('/delete_scan/<int:scan_id>', methods=['POST', 'DELETE'])
 def delete_scan(scan_id):
-    session = get_session()()
+    session = g.db_session
     scan = session.query(Scan).get(scan_id)
     if scan:
         session.delete(scan)
@@ -352,7 +368,7 @@ def delete_scan(scan_id):
 
 @app.route('/mark_scan_failed/<int:scan_id>', methods=['POST'])
 def mark_scan_failed(scan_id):
-    session = get_session()()
+    session = g.db_session
     scan = session.query(Scan).get(scan_id)
     if scan:
         scan.status = ScanStatus.FAILED
@@ -375,14 +391,14 @@ def chat_with_quality_interpretation(interpretation_id):
 
 @app.route('/quality_interpretation/<int:interpretation_id>')
 def quality_interpretation(interpretation_id):
-    session = get_session()()
+    session = g.db_session
     interpretation = session.query(QualityInterpretation).get(interpretation_id)
     metric = interpretation.quality_metric
     return render_template('quality_interpretation.html', interpretation=interpretation, metric=metric)
 
 @app.route('/interpret_quality_metrics/<int:metric_id>')
 def interpret_quality_metrics(metric_id):
-    session = get_session()()
+    session = g.db_session
     metric = session.query(QualityMetric).get(metric_id)
     if not metric:
         return jsonify({'error': 'Metric not found'})
@@ -401,7 +417,7 @@ def interpret_quality_metrics(metric_id):
 
 @app.route('/scan/<int:scan_id>')
 def scan(scan_id):
-    session = get_session()()
+    session = g.db_session
     scan = session.query(Scan).get(scan_id)
     app.logger.info(f"Scan type for scan {scan_id} is {scan.scan_type}")
     if scan.scan_type == 'quality':
@@ -411,14 +427,14 @@ def scan(scan_id):
 
 @app.route('/finding/<int:finding_id>')
 def finding(finding_id):
-    session = get_session()()
+    session = g.db_session
     finding = session.query(Finding).get(finding_id)
     chat_history = session.query(ChatMessage).filter_by(finding_id=finding_id).order_by(ChatMessage.created_at).all()
     return render_template('finding.html', finding=finding, chat_history=chat_history)
 
 @app.route('/finding/<int:finding_id>/search_cve', methods=['POST'])
 def search_cve(finding_id):
-    session = get_session()()
+    session = g.db_session
     finding = session.query(Finding).get(finding_id)
     if finding:
         orchestrator = Orchestrator(None, session, di.google_web_search)
@@ -428,7 +444,7 @@ def search_cve(finding_id):
 
 @app.route('/recheck_finding/<int:finding_id>', methods=['POST'])
 def recheck_finding(finding_id):
-    session = get_session()()
+    session = g.db_session
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
     orchestrator.recheck_finding(finding_id)
@@ -436,7 +452,7 @@ def recheck_finding(finding_id):
 
 @app.route('/rewrite_remediation/<int:finding_id>', methods=['POST'])
 def rewrite_remediation(finding_id):
-    session = get_session()()
+    session = g.db_session
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
     orchestrator.rewrite_remediation(finding_id)
@@ -445,7 +461,7 @@ def rewrite_remediation(finding_id):
 @app.route('/update_patch/<int:finding_id>', methods=['POST'])
 def update_patch(finding_id):
     patch_diff = request.form['patch_diff']
-    session = get_session()()
+    session = g.db_session
     patch = session.query(Patch).filter_by(finding_id=finding_id).first()
     if patch:
         patch.generated_patch_diff = patch_diff
@@ -455,7 +471,7 @@ def update_patch(finding_id):
 @app.route('/chat/<int:finding_id>', methods=['POST'])
 def chat(finding_id):
     message = request.json['message']
-    session = get_session()()
+    session = g.db_session
     orchestrator = Orchestrator(None, session, di.google_web_search)
     response = orchestrator.chat_with_finding(finding_id, message)
     return {'response': response}
@@ -464,7 +480,7 @@ def chat(finding_id):
 def ci_scan():
     repo_url = request.json['repo_url']
     commit_hash = request.json['commit_hash']
-    session = get_session()()
+    session = g.db_session
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
     repository = session.query(Repository).filter_by(url=repo_url).first()
@@ -482,10 +498,10 @@ def ci_scan():
     else:
         return {'status': 'success', 'message': 'No high or critical severity findings found.'}
 
-def synchronize_scan_statuses():
+def synchronize_scan_statuses(session): # <--- ACCEPT SESSION AS AN ARGUMENT
     """Synchronizes the scan statuses with the RQ queue."""
-    with app.app_context():
-        session = get_session()()
+    # No longer creates or closes its own session. It uses the one passed to it.
+    with app.app_context(): # Keep the app context for logging or other extensions
         scans = session.query(Scan).filter(Scan.status.in_([ScanStatus.RUNNING, ScanStatus.QUEUED])).all()
         app.logger.info(f"Found {len(scans)} running or queued scans to synchronize.")
         for scan in scans:
@@ -496,21 +512,48 @@ def synchronize_scan_statuses():
                     app.logger.info(f"Updating scan {scan.id} to FAILED.")
                     scan.status = ScanStatus.FAILED
                     session.commit()
+            else:
+                app.logger.info(f"Scan {scan.id} has no job ID, marking as FAILED.")
+                scan.status = ScanStatus.FAILED
+                session.commit()
         app.logger.info("Synchronization complete.")
 
 def periodic_sync():
     """Periodically synchronizes the scan statuses."""
     import time
+    import logging
+    
+    logging.basicConfig(level=logging.INFO)
+    
     while True:
-        synchronize_scan_statuses()
-        time.sleep(60)
+        session = None # Define session outside the try block
+        try:
+            logging.info("Periodic Sync: Creating new DB session...")
+            # Create a new session for this run
+            session = get_session()()
+            # Pass the session to the sync function
+            synchronize_scan_statuses(session)
+        except Exception as e:
+            logging.error("An error occurred in the periodic sync process.", exc_info=True)
+        finally:
+            # This is critical: always close the session to prevent leaks
+            if session:
+                session.close()
+                logging.info("Periodic Sync: DB session closed.")
+        time.sleep(10)
 
 @app.before_request
-def start_sync_thread():
-    import threading
-    if not hasattr(app, 'sync_thread_started'):
-        app.sync_thread_started = True
-        sync_thread = threading.Thread(target=periodic_sync)
-        sync_thread.daemon = True
-        sync_thread.start()
-        app.logger.info("Started background thread for scan status synchronization.")
+def before_request():
+    """
+    Get a session from the pool and store it in the application context.
+    """
+    g.db_session = get_session()()
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    """
+    Remove the database session at the end of the request or when the app shuts down.
+    """
+    db_session = g.pop('db_session', None)
+    if db_session is not None:
+        db_session.close()

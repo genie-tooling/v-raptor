@@ -1,0 +1,46 @@
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th scope="col">Scan ID</th>
+            <th scope="col">Repository</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
+            <th scope="col">Commit</th>
+            <th scope="col">Created At</th>
+            <th scope="col">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for scan in scans %}
+        <tr data-scan-id="{{ scan.id }}">
+            <td><a href="/scan/{{ scan.id }}">#{{ scan.id }}</a></td>
+            <td><a href="/repository/{{ scan.repository.id }}">{{ scan.repository.name }}</a></td>
+            <td>{{ scan.scan_type }}</td>
+            <td class="status-cell">
+                {% if scan.status.value == 'running' %}
+                    <span class="badge bg-info">Running...</span>
+                {% elif scan.status.value == 'completed' %}
+                    <span class="badge bg-success">Completed</span>
+                {% elif scan.status.value == 'queued' %}
+                    <span class="badge bg-secondary">Queued</span>
+                {% elif scan.status.value == 'failed' %}
+                    <span class="badge bg-danger">Failed</span>
+                {% else %}
+                    <span class="badge bg-dark">{{ scan.status.value }}</span>
+                {% endif %}
+            </td>
+            <td>{{ scan.triggering_commit_hash[:7] if scan.triggering_commit_hash else 'N/A' }}</td>
+            <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') if scan.created_at else 'N/A' }}</td>
+            <td class="actions-cell">
+                <a href="/scan/{{ scan.id }}" class="btn btn-primary btn-sm">View</a>
+                {% if scan.status.value == 'running' %}
+                    <form action="/stop_scan/{{ scan.id }}" method="post" style="display: inline;" class="ms-2">
+                        <button type="submit" class="btn btn-warning btn-sm">Stop</button>
+                    </form>
+                {% endif %}
+                <a href="/delete_scan/{{ scan.id }}" class="btn btn-danger btn-sm" data-method="delete" onclick="return confirm('Are you sure you want to delete this scan? This action cannot be undone.');">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

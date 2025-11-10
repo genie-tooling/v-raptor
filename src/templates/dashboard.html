@@ -37,40 +37,11 @@
 <div class="card border-secondary mt-4">
     <div class="card-header">Recent Scans</div>
     <div class="card-body">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th scope="col">Scan ID</th>
-                    <th scope="col">Repository</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Created At</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for scan in recent_scans %}
-                <tr>
-                    <td><a href="/scan/{{ scan.id }}">#{{ scan.id }}</a></td>
-                    <td><a href="/repository/{{ scan.repository.id }}">{{ scan.repository.name }}</a></td>
-                    <td>{{ scan.scan_type }}</td>
-                    <td>
-                        {% if scan.status.value == 'running' %}
-                            <span class="badge bg-info">Running...</span>
-                        {% elif scan.status.value == 'completed' %}
-                            <span class="badge bg-success">Completed</span>
-                        {% elif scan.status.value == 'queued' %}
-                            <span class="badge bg-secondary">Queued</span>
-                        {% elif scan.status.value == 'failed' %}
-                            <span class="badge bg-danger">Failed</span>
-                        {% else %}
-                            <span class="badge bg-dark">{{ scan.status.value }}</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        {% with scans = recent_scans|sort(attribute='created_at', reverse=True) %}
+            {% include '_scans_table.html' %}
+        {% endwith %}
+    </div>
+</div>
 <div class="row mt-4">
     <div class="col-md-6">
         <div class="card border-secondary">
