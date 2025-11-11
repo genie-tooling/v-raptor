@@ -142,6 +142,91 @@ The server will run on `http://localhost:5000`. You will need to configure your 
 The worker will listen for jobs on the Redis queue and execute them.
 
 You can also use Docker Compose to run all the services together:
+
 ```bash
+
 docker-compose up --build
+
+```
+
+
+
+## CI/CD Integration
+
+
+
+You can trigger scans from your CI/CD pipeline (e.g., Jenkins, GitLab CI, GitHub Actions) by calling the `/ci/scan` API endpoint.
+
+
+
+This endpoint accepts a POST request with a JSON payload containing the `repo_url` and an optional `commit_hash`.
+
+
+
+- If `commit_hash` is provided, V-Raptor will scan that specific commit.
+
+- If `commit_hash` is not provided, V-Raptor will automatically scan the latest commit of the repository's primary branch.
+
+
+
+**Example `curl` command:**
+
+
+
+To scan the latest commit:
+
+```bash
+
+curl -X POST -H "Content-Type: application/json" \
+
+  -d '{"repo_url": "https://github.com/your-username/your-repo.git"}' \
+
+  http://localhost:5000/ci/scan
+
+```
+
+
+
+To scan a specific commit:
+
+```bash
+
+curl -X POST -H "Content-Type: application/json" \
+
+  -d '{"repo_url": "https://github.com/your-username/your-repo.git", "commit_hash": "your-commit-hash"}' \
+
+  http://localhost:5000/ci/scan
+
+```
+
+
+
+**Success Response:**
+
+```json
+
+{
+
+  "status": "success",
+
+  "message": "Scan initiated for https://github.com/your-username/your-repo.git at commit your-commit-hash."
+
+}
+
+```
+
+
+
+**Failure Response:**
+
+```json
+
+{
+
+  "status": "failure",
+
+  "message": "Could not get latest commit hash for https://github.com/your-username/your-repo.git."
+
+}
+
 ```

@@ -14,6 +14,10 @@ class Repository(Base):
     name = Column(String, nullable=False)
     url = Column(String, nullable=False, unique=True)
     primary_branch = Column(String, nullable=True)
+    last_commit_hash = Column(String, nullable=True)
+    needs_scan = Column(Boolean, default=False)
+    periodic_scan_enabled = Column(Boolean, default=False)
+    periodic_scan_interval = Column(Integer, default=86400) # 24 hours
     scans = relationship("Scan", back_populates="repository")
 
 class ScanStatus(enum.Enum):
@@ -28,6 +32,7 @@ class Scan(Base):
     repository_id = Column(Integer, ForeignKey('repository.id'), nullable=False)
     scan_type = Column(String, default='commit')
     status = Column(Enum(ScanStatus, values_callable=lambda x: [e.value for e in x]), default=ScanStatus.QUEUED)
+    status_message = Column(String)
     triggering_commit_hash = Column(String)
     job_id = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

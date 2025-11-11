@@ -14,6 +14,7 @@ fi
 
 source .venv/bin/activate
 uv pip install .
+uv pip list | grep rq
 
 # Check if go is installed
 if ! [ -x "$(command -v go)" ]; then
@@ -25,6 +26,8 @@ go install github.com/google/osv-scanner/cmd/osv-scanner@latest
 
 if [ "$1" == "start-web" ]; then
     python3 -m src.server
+elif [ "$1" == "--start-scheduler" ]; then
+    python3 -m src.scheduler
 else
     python3 main.py "$@"
 fi

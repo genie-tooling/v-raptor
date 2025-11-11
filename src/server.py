@@ -4,7 +4,9 @@ from sqlalchemy.orm import selectinload
 from flask import g, Flask, render_template, request, redirect, url_for, flash, jsonify
 from redis import Redis
 from rq import Queue
-from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric
+from rq.registry import FailedJobRegistry
+from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric, QualityInterpretation, ScanStatus
+from rq.job import Job
 from .orchestrator import Orchestrator
 from .vcs import VCSService
 from .llm import LLMService
@@ -16,7 +18,7 @@ app.secret_key = os.urandom(24)
 
 redis_host = os.getenv('REDIS_HOST', 'localhost')
 redis_conn = Redis(host=redis_host, port=6379)
-q = Queue(connection=redis_conn)
+q = Queue(connection=redis_conn, default_timeout=3600)
 
 try:
     from googlesearch import search as google_search_tool
@@ -122,9 +124,6 @@ def save_llm_settings():
     return redirect(url_for('config_page'))
 
 
-from rq.registry import FailedJobRegistry
-
-# ... (existing imports)
 
 @app.route('/failed_jobs')
 def failed_jobs():
@@ -153,13 +152,6 @@ def reports():
 def failed_job(job_id):
     job = q.fetch_job(job_id)
     return render_template('failed_job.html', job=job)
-
-from sqlalchemy import func
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
-from redis import Redis
-from rq import Queue
-from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric
-# ... (existing imports)
 
 @app.route('/dashboard')
 def dashboard():
@@ -206,6 +198,17 @@ def confirm_add_repo():
     flash(f"Successfully added repository '{repo_name}' (monitoring branch '{selected_branch}').", 'success')
     return redirect(url_for('index'))
 
+@app.route('/repository/<int:repo_id>/periodic_scan', methods=['POST'])
+def periodic_scan_config(repo_id):
+    session = g.db_session
+    repo = session.query(Repository).get(repo_id)
+    if repo:
+        repo.periodic_scan_enabled = 'periodic_scan_enabled' in request.form
+        repo.periodic_scan_interval = int(request.form.get('periodic_scan_interval', 86400))
+        session.commit()
+        flash("Periodic scan settings updated.", 'success')
+    return redirect(url_for('repository', repo_id=repo_id))
+
 @app.route('/remove_repo/<int:repo_id>', methods=['POST'])
 def remove_repo(repo_id):
     session = g.db_session
@@ -213,8 +216,8 @@ def remove_repo(repo_id):
     if repo:
         session.delete(repo)
         session.commit()
-    return redirect(url_for('index'))
-
+        return redirect(url_for('index'))
+        
 @app.route('/repository/<int:repo_id>')
 def repository(repo_id):
     session = g.db_session
@@ -249,6 +252,7 @@ def api_scans():
         scans_data.append({
             'id': scan.id,
             'status': scan.status.value,
+            'status_message': scan.status_message,
             'job_id': job.id if job else None,
         })
     return jsonify(scans_data)
@@ -278,19 +282,32 @@ def run_scan(repo_id):
     repo = session.query(Repository).get(repo_id)
     if repo:
         auto_patch = 'auto_patch' in request.form
-        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, auto_patch=auto_patch, job_timeout=600)
+        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, auto_patch=auto_patch)
         scan = Scan(repository_id=repo.id, scan_type='deep', status='queued', job_id=job.id, auto_patch_enabled=auto_patch)
         session.add(scan)
         session.commit()
         flash(f"Deep scan initiated for '{repo.name}'.", 'info')
     return redirect(url_for('repository', repo_id=repo_id))
 
+@app.route('/scan_new_commits/<int:repo_id>', methods=['POST'])
+def scan_new_commits(repo_id):
+    session = g.db_session
+    repo = session.query(Repository).get(repo_id)
+    if repo and repo.needs_scan:
+        job = q.enqueue('src.worker.run_analysis_job', repo.url, repo.last_commit_hash, repo.id, auto_patch=False)
+        scan = Scan(repository_id=repo.id, scan_type='commit', status='queued', job_id=job.id, triggering_commit_hash=repo.last_commit_hash)
+        session.add(scan)
+        repo.needs_scan = False
+        session.commit()
+        flash(f"Scan for new commits initiated for '{repo.name}'.", 'info')
+    return redirect(url_for('index'))
+
 @app.route('/run_quality_scan/<int:repo_id>', methods=['POST'])
 def run_quality_scan(repo_id):
     session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
-        job = q.enqueue('src.worker.run_quality_scan_job', repo_id, job_timeout=600)
+        job = q.enqueue('src.worker.run_quality_scan_job', repo_id)
         scan = Scan(repository_id=repo.id, scan_type='quality', status='queued', job_id=job.id)
         session.add(scan)
         session.commit()
@@ -302,9 +319,11 @@ def link_cves(repo_id):
     session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
-        job = q.enqueue('src.worker.link_cves_to_findings_job', repo_id, job_timeout=600)
-        scan = Scan(repository_id=repo.id, scan_type='cve-linking', status='queued', job_id=job.id)
+        scan = Scan(repository_id=repo.id, scan_type='cve-linking', status='queued')
         session.add(scan)
+        session.commit()
+        job = q.enqueue('src.worker.link_cves_to_findings_job', repo_id, scan.id)
+        scan.job_id = job.id
         session.commit()
         flash(f"CVE linking initiated for repository.", 'info')
     return redirect(url_for('repository', repo_id=repo_id))
@@ -315,9 +334,9 @@ def rerun_scan(scan_id):
     scan = session.query(Scan).get(scan_id)
     if scan:
         if scan.scan_type == 'commit':
-            job = q.enqueue('src.worker.run_analysis_job', scan.repository.url, scan.triggering_commit_hash, scan.repository.id, auto_patch=scan.auto_patch_enabled, job_timeout=600)
+            job = q.enqueue('src.worker.run_analysis_job', scan.repository.url, scan.triggering_commit_hash, scan.repository.id, auto_patch=scan.auto_patch_enabled)
         else:
-            job = q.enqueue('src.worker.run_deep_scan_job', scan.repository.url, auto_patch=scan.auto_patch_enabled, job_timeout=600)
+            job = q.enqueue('src.worker.run_deep_scan_job', scan.repository.url, auto_patch=scan.auto_patch_enabled)
         scan.job_id = job.id
         scan.status = 'queued'
         session.commit()
@@ -333,9 +352,7 @@ def generate_patch(finding_id):
     flash(f"Patch generation initiated for Finding #{finding_id}.", 'info')
     return redirect(url_for('finding', finding_id=finding_id))
 
-from .database import get_session, Repository, Scan, Finding, Patch, ChatMessage, QualityMetric, QualityInterpretation, ScanStatus
-# ...
-from rq.job import Job
+
 # ...
 @app.route('/stop_scan/<int:scan_id>', methods=['POST'])
 def stop_scan(scan_id):
@@ -479,24 +496,32 @@ def chat(finding_id):
 @app.route('/ci/scan', methods=['POST'])
 def ci_scan():
     repo_url = request.json['repo_url']
-    commit_hash = request.json['commit_hash']
+    commit_hash = request.json.get('commit_hash')
+
     session = g.db_session
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
+    
     repository = session.query(Repository).filter_by(url=repo_url).first()
     if not repository:
-        repository = Repository(name=repo_url.split('/')[-1], url=repo_url)
+        primary_branch = vcs_service.get_primary_branch(repo_url)
+        if not primary_branch:
+            return jsonify({'status': 'failure', 'message': f'Could not determine primary branch for {repo_url}.'}), 400
+        repository = Repository(name=repo_url.split('/')[-1], url=repo_url, primary_branch=primary_branch)
         session.add(repository)
         session.commit()
-    scan = orchestrator.run_analysis_on_commit(repo_url, commit_hash, repository.id, wait_for_completion=True)
-    high_severity_findings = session.query(Finding).filter(
-        Finding.scan_id == scan.id,
-        Finding.severity.in_(['HIGH', 'CRITICAL'])
-    ).count()
-    if high_severity_findings > 0:
-        return {'status': 'failure', 'message': f'Found {high_severity_findings} high or critical severity findings.'}
-    else:
-        return {'status': 'success', 'message': 'No high or critical severity findings found.'}
+
+    if not commit_hash:
+        commit_hash = vcs_service.get_latest_commit_hash(repo_url, repository.primary_branch)
+        if not commit_hash:
+            return jsonify({'status': 'failure', 'message': f'Could not get latest commit hash for {repo_url}.'}), 400
+
+    job = q.enqueue('src.worker.run_analysis_job', repo_url, commit_hash, repository.id, auto_patch=False)
+    scan = Scan(repository_id=repository.id, scan_type='commit', status='queued', job_id=job.id, triggering_commit_hash=commit_hash)
+    session.add(scan)
+    session.commit()
+
+    return jsonify({'status': 'success', 'message': f'Scan initiated for {repo_url} at commit {commit_hash}.'})
 
 def synchronize_scan_statuses(session): # <--- ACCEPT SESSION AS AN ARGUMENT
     """Synchronizes the scan statuses with the RQ queue."""

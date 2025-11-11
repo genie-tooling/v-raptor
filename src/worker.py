@@ -1,13 +1,12 @@
-# src/worker.py
-
-import logging
-import os
-from rq import Worker, Queue, Connection
 from redis import Redis
 from src.orchestrator import Orchestrator
 from src.vcs import VCSService
-from src.database import get_session
+from src.database import get_session, Repository, Scan
+from rq import Queue, Connection, Worker
+import os
 from src import di
+from datetime import datetime, timezone
+import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -15,6 +14,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 listen = ['default']
 redis_host = os.getenv('REDIS_HOST', 'localhost')
 redis_conn = Redis(host=redis_host, port=6379)
+q = Queue(connection=redis_conn)
 
 def _get_orchestrator():
     """Helper function to create an orchestrator instance."""
@@ -99,25 +99,12 @@ def run_quality_scan_job(repo_id):
         if orchestrator and orchestrator.db_session:
             orchestrator.db_session.close()
 
-def link_cves_to_findings_job(repo_id):
-    """
-    This is the background task that will be executed by the RQ worker.
-    It runs a CVE scan on a repository.
-    """
-    logging.info(f"Starting CVE linking job for repo: {repo_id}")
-    orchestrator = None
-    try:
-        orchestrator = _get_orchestrator()
-        if not orchestrator:
-            raise RuntimeError("Orchestrator could not be initialized. Check environment and configuration.")
-        
-        orchestrator.link_cves_to_findings(repo_id)
-        logging.info(f"CVE linking job completed for repo: {repo_id}")
-    except Exception as e:
-        logging.error(f"CVE linking job failed for repo {repo_id}: {e}", exc_info=True)
-    finally:
-        if orchestrator and orchestrator.db_session:
-            orchestrator.db_session.close()
+def link_cves_to_findings_job(repo_id, scan_id):
+    """Job to link CVEs to findings for a repository."""
+    session = get_session()()
+    orchestrator = Orchestrator(VCSService(git_provider='github', token=''), session, di.google_web_search)
+    orchestrator.link_cves_to_findings(repo_id, scan_id)
+    session.close()
 
 def run_analysis_job(repo_url, commit_hash, repo_id, auto_patch=False):
     """
@@ -136,6 +123,42 @@ def run_analysis_job(repo_url, commit_hash, repo_id, auto_patch=False):
         logging.info(f"Analysis job completed for commit: {commit_hash}")
     except Exception as e:
         logging.error(f"Analysis job failed for commit {commit_hash}: {e}", exc_info=True)
+    finally:
+        if orchestrator and orchestrator.db_session:
+            orchestrator.db_session.close()
+
+def check_for_new_commits_job():
+    """
+    This is a background task that checks for new commits in all repositories
+    and triggers periodic scans.
+    """
+    logging.info("Starting new commit check job...")
+    orchestrator = None
+    try:
+        orchestrator = _get_orchestrator()
+        if not orchestrator:
+            raise RuntimeError("Orchestrator could not be initialized. Check environment and configuration.")
+        
+        repositories = orchestrator.db_session.query(Repository).all()
+        for repo in repositories:
+            # Check for new commits
+            latest_hash = orchestrator.vcs_service.get_latest_commit_hash(repo.url, repo.primary_branch)
+            if latest_hash and latest_hash != repo.last_commit_hash:
+                logging.info(f"New commits found for {repo.name}. Old hash: {repo.last_commit_hash}, New hash: {latest_hash}")
+                repo.last_commit_hash = latest_hash
+                repo.needs_scan = True
+                orchestrator.db_session.commit()
+
+            # Check for periodic scans
+            if repo.periodic_scan_enabled:
+                last_scan = orchestrator.db_session.query(Scan).filter_by(repository_id=repo.id, scan_type='deep').order_by(Scan.created_at.desc()).first()
+                if not last_scan or (datetime.now(timezone.utc) - last_scan.created_at).total_seconds() > repo.periodic_scan_interval:
+                    logging.info(f"Triggering periodic deep scan for {repo.name}")
+                    q.enqueue(run_deep_scan_job, repo.url, auto_patch=False)
+
+        logging.info("New commit check job completed.")
+    except Exception as e:
+        logging.error(f"New commit check job failed: {e}", exc_info=True)
     finally:
         if orchestrator and orchestrator.db_session:
             orchestrator.db_session.close()

@@ -84,7 +84,7 @@ class LLMService:
                         api_key = f.read().strip()
                 except FileNotFoundError:
                     raise ValueError(f"GEMINI_API_KEY not found for {client_type}.")
-            return GeminiProvider(api_key=api_key)
+            return GeminiProvider(api_key=api_key, timeout=config.LLM_TIMEOUT)
         elif provider == 'llama.cpp':
             model_path = getattr(config, f"{prefix}_LLAMA_CPP_MODEL_PATH")
             if not model_path or not os.path.exists(model_path):
@@ -92,7 +92,7 @@ class LLMService:
             return LlamaCppProvider(model_path=model_path)
         elif provider == 'ollama':
             host_url = getattr(config, f"{prefix}_OLLAMA_URL")
-            return OllamaProvider(host_url=host_url)
+            return OllamaProvider(host_url=host_url, timeout=config.LLM_TIMEOUT)
         else:
             raise ValueError(f"Unsupported LLM provider for {client_type}: {provider}")
 
@@ -144,35 +144,45 @@ Example response:
     def analyze_file(self, file_path):
         with open(file_path, 'r') as f:
             content = f.read()
-        prompt = f"""You are a senior security engineer. Analyze the following file and identify potential vulnerabilities.
+        prompt = f"""You are a senior security engineer with expertise in code analysis. Your task is to analyze the following file for potential security vulnerabilities.
 
-File: {file_path}
-
+**File Information:**
+- **Path:** `{file_path}`
+- **Content:**
 ```
 {content}
 ```
 
+**Analysis Instructions:**
+
+1.  **Context is Key:** Analyze the code within the context of the file's purpose. For example, a line in a `.gitignore` file is not a vulnerability, but a configuration setting.
+2.  **High-Confidence Findings Only:** Report only vulnerabilities that you are highly confident about. If you are unsure, do not report it.
+3.  **Ignore Non-Vulnerabilities:**
+    -   Do not report entries in `.gitignore` files as vulnerabilities.
+    -   Do not report the mere presence of a library unless a specific version is known to be vulnerable.
+    -   Do not report commented-out code unless it contains sensitive information.
+
+**Output Format:**
+
 Respond with a JSON object containing a list of vulnerabilities. Each vulnerability should have the following fields:
-- file_path: The path to the file where the vulnerability is located.
-- line_number: The line number where the vulnerability is located.
-- description: A short, one-sentence description of the vulnerability.
-- code_snippet: The exact line(s) of vulnerable code from the file.
+- `file_path`: The path to the file where the vulnerability is located.
+- `line_number`: The line number where the vulnerability is located.
+- `description`: A short, one-sentence description of the vulnerability and why it is a vulnerability in this context.
+- `code_snippet`: The exact line(s) of vulnerable code from the file.
+- `confidence`: A float between 0.0 and 1.0 indicating your confidence in this finding.
 
-Important:
-- The mere presence of a library (e.g., 'rich') is not a vulnerability unless a specific version is known to be vulnerable.
-- Entries in `.gitignore` files (e.g., '*.msi') are not vulnerabilities.
-- Only report vulnerabilities with a high confidence score. Do not include any explanations or ask any questions.
+If no vulnerabilities are found, respond with an empty JSON object: `{{}}`.
 
-If no vulnerabilities are found, respond with an empty JSON object: {{}}.
-Example response:
+**Example Response:**
 ```json
 {{
   "vulnerabilities": [
     {{
       "file_path": "src/user.py",
       "line_number": 42,
-      "description": "SQL injection vulnerability due to string formatting.",
-      "code_snippet": "cursor.execute(f\\"SELECT * FROM users WHERE username = '{{username}}'\\")"
+      "description": "SQL injection vulnerability due to string formatting, allowing an attacker to execute arbitrary SQL commands.",
+      "code_snippet": "cursor.execute(f\\"SELECT * FROM users WHERE username = '{{username}}'\\")",
+      "confidence": 0.95
     }}
   ]
 }}

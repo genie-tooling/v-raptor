@@ -2,6 +2,7 @@
 name = "v-raptor"
 version = "0.1.0"
 dependencies = [
+    "alembic==1.17.1",
     "annotated-types==0.7.0",
     "anyio==4.11.0",
     "cachetools==6.2.1",

@@ -23,6 +23,7 @@
                 <span class="badge bg-dark">{{ scan.status.value }}</span>
             {% endif %}
         </p>
+        <p><strong>Status Message:</strong> {{ scan.status_message }}</p>
         <p><strong>Type:</strong> {{ scan.scan_type }}</p>
         <p><strong>Auto-Patching Enabled:</strong> {{ 'Yes' if scan.auto_patch_enabled else 'No' }}</p>
     </div>

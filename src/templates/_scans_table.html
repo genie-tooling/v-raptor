@@ -5,6 +5,7 @@
             <th scope="col">Repository</th>
             <th scope="col">Type</th>
             <th scope="col">Status</th>
+            <th scope="col">Status Message</th>
             <th scope="col">Commit</th>
             <th scope="col">Created At</th>
             <th scope="col">Actions</th>
@@ -29,6 +30,7 @@
                     <span class="badge bg-dark">{{ scan.status.value }}</span>
                 {% endif %}
             </td>
+            <td class="status-message-cell">{{ scan.status_message }}</td>
             <td>{{ scan.triggering_commit_hash[:7] if scan.triggering_commit_hash else 'N/A' }}</td>
             <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') if scan.created_at else 'N/A' }}</td>
             <td class="actions-cell">

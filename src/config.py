@@ -15,6 +15,9 @@ PATCHER_OLLAMA_MODEL = 'gemma3:latest'
 PATCHER_OLLAMA_URL = 'http://localhost:11434'
 PATCHER_GEMINI_MODEL = 'gemini-1.5-pro-latest'
 
+# --- LLM Timeout ---
+LLM_TIMEOUT = 60 # in seconds
+
 # --- Database Configuration ---
 DATABASE_URL = 'sqlite:///v-raptor.db'
 

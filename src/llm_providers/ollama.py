@@ -6,8 +6,9 @@ from ollama import Client
 from .base import BaseLLMProvider
 
 class OllamaProvider(BaseLLMProvider):
-    def __init__(self, host_url):
-        self.client = Client(host=host_url)
+    def __init__(self, host_url, timeout: int = 60):
+        super().__init__(timeout=timeout)
+        self.client = Client(host=host_url, timeout=timeout)
 
     def create_chat_completion(self, model_name, prompt, is_json=True):
         response = self.client.chat(

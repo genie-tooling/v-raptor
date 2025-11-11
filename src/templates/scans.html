@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const row = document.querySelector(`tr[data-scan-id='${scan.id}']`);
                     if (row) {
                         const statusCell = row.querySelector('.status-cell');
+                        const statusMessageCell = row.querySelector('.status-message-cell');
                         const actionsCell = row.querySelector('.actions-cell');
                         
                         let badgeClass = 'bg-dark';
@@ -54,6 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         
                         statusCell.innerHTML = `<span class="badge ${badgeClass}">${scan.status}</span>`;
+                        statusMessageCell.innerHTML = scan.status_message || '';
                         
                         if (scan.status === 'running') {
                             actionsCell.innerHTML = `

@@ -95,6 +95,29 @@ class VCSService:
             print(f"An unexpected error occurred while fetching primary branch: {e}")
             return None
 
+    def get_latest_commit_hash(self, repo_url: str, branch: str) -> str:
+        """
+        Gets the latest commit hash for a given branch of a remote repository.
+        Returns the commit hash as a string, or None if it cannot be determined.
+        """
+        if not repo_url or not branch:
+            return None
+        try:
+            result = subprocess.check_output(
+                ['git', 'ls-remote', repo_url, f'refs/heads/{branch}'],
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if result:
+                return result.split()[0]
+            return None
+        except subprocess.CalledProcessError as e:
+            print(f"Error fetching latest commit hash for {repo_url} on branch {branch}: {e.stderr}")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred while fetching latest commit hash: {e}")
+            return None
+
     def is_valid_git_url(self, repo_url):
         """Checks if a given URL is a valid git repository URL."""
         if os.path.isdir(repo_url) and os.path.isdir(os.path.join(repo_url, '.git')):
