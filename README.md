@@ -91,6 +91,18 @@ To scan a specific commit:
 ./run.sh --scan-url <repository-url> --scan-commit <commit-hash>
 ```
 
+To scan a local repository:
+
+```
+./run.sh --scan-local /path/to/your/repo
+```
+
+You can also output the findings in JSON format, which is useful for scripting and integrations:
+
+```
+./run.sh --scan-local /path/to/your/repo --output-json
+```
+
 ## Configuration
 
 All configuration is done through the web UI. Go to the "Configuration" page to set up your API keys and other settings.

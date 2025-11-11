@@ -1,110 +1,147 @@
 # Advanced Usage
 
-## Server Mode
+This guide covers advanced V-Raptor features, including running local scans from the command line, using it in Git pre-commit hooks, and running it as a server for continuous analysis.
 
-V-Raptor can be run as a server to provide continuous analysis of your code. In this mode, V-Raptor can be used as a pre-commit or pre-push hook to analyze your code before it is committed or pushed to a repository.
+## CLI Scanning
 
-To run V-Raptor in server mode, you need to start the webhook server and a worker. The server will listen for requests from your Git hooks, and the worker will process the analysis jobs.
+V-Raptor's command-line interface (CLI) is a powerful tool for developers who want to integrate security scanning into their local development workflow. It allows you to scan your code without needing to run a web server.
 
-**To start the server:**
+### Local Repository Scanning
+
+You can scan a local Git repository directly from the command line. This is useful for running scans on your local machine without pushing your code to a remote repository. It's also the foundation for integrating V-Raptor into your Git hooks.
+
+To scan a local repository, use the `--scan-local` flag and provide the path to your repository:
+
 ```bash
-./run.sh start-server
+./run.sh --scan-local /path/to/your/repo
 ```
 
-**To start a worker:**
+You can also run it from within the repository's directory:
+
 ```bash
-./run.sh start-worker
+./run.sh --scan-local .
 ```
 
-### Git Hook Examples
+This command will perform a deep scan on your local repository, which includes:
+- SAST scanning with Semgrep and Bandit
+- Intelligent CVE scanning
+- Source code analysis with an LLM
+- Secret scanning with Gitleaks
+- Dependency scanning
+- Configuration scanning
+- Code quality analysis
 
-You can use V-Raptor as a pre-commit or pre-push hook to analyze your code before it is committed or pushed to a repository. Here are some examples of how you can do this.
+### JSON Output
 
-#### Pre-Commit Hook
+For programmatic use, such as in scripts or CI/CD pipelines, you can get the scan results in JSON format using the `--output-json` flag.
 
-This hook will scan the staged files for issues before you commit them.
+```bash
+./run.sh --scan-local . --output-json
+```
 
-Create a file named `.git/hooks/pre-commit` in your repository and add the following code:
+This will output a JSON array of all the findings from the scan.
+
+**Example JSON Output:**
+
+```json
+[
+    {
+        "id": 1,
+        "scan_id": 1,
+        "file_path": "src/server.py",
+        "line_number": 42,
+        "code_snippet": "app.run(debug=True)",
+        "description": "Running a Flask app in debug mode is insecure.",
+        "severity": "High",
+        "confidence_score": 0.9,
+        "status": "new",
+        "cve_id": null
+    }
+]
+```
+
+You can use tools like `jq` to process this output. For example, to count the number of high-severity findings:
+
+```bash
+./run.sh --scan-local . --output-json | jq '[.[] | select(.severity == "High")] | length'
+```
+
+## Git Pre-commit Hook
+
+You can use V-Raptor as a pre-commit hook to analyze your code before it's committed. This helps catch vulnerabilities early in the development process.
+
+The following script will run a local scan on your repository and fail the commit if any findings are detected.
+
+**1. Create the pre-commit hook file:**
+
+Create a file named `.git/hooks/pre-commit` in your repository.
+
+**2. Add the script to the file:**
 
 ```bash
 #!/bin/bash
 
-# Get the list of staged files
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+# Path to your v-raptor project
+VRAPTOR_PATH="/path/to/your/v-raptor"
 
-# If there are no staged files, exit
-if [ -z "$STAGED_FILES" ]; then
+echo "Running V-Raptor pre-commit hook..."
+
+# Run the scan and capture the JSON output
+# Make sure your v-raptor environment is set up correctly (e.g., virtualenv)
+output=$($VRAPTOR_PATH/run.sh --scan-local . --output-json)
+
+# Check if the output is empty or not a valid JSON
+if [ -z "$output" ] || ! echo "$output" | jq . > /dev/null 2>&1; then
+  echo "V-Raptor scan did not produce valid JSON output. Allowing commit."
   exit 0
 fi
 
-# Send the staged files to the V-Raptor server for analysis
-RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d "{\"files\": \"$STAGED_FILES\"}" http://localhost:8000/scan)
+# Count the number of findings
+finding_count=$(echo "$output" | jq 'length')
 
-# If the server returns a non-zero exit code, abort the commit
-if [ "$RESPONSE" != "0" ]; then
-  echo "V-Raptor found issues in your code. Please fix them before committing."
+if [ "$finding_count" -gt 0 ]; then
+  echo "V-Raptor found $finding_count issues in your code. Please fix them before committing."
+  echo "$output" | jq .
   exit 1
+else
+  echo "No issues found by V-Raptor."
 fi
 
 exit 0
 ```
 
-Make the hook executable:
+**Important:** Replace `/path/to/your/v-raptor` with the actual absolute path to your V-Raptor installation.
+
+**3. Make the hook executable:**
 
 ```bash
 chmod +x .git/hooks/pre-commit
 ```
 
-#### Pre-Push Hook
+Now, every time you run `git commit`, this hook will execute, scan your code, and prevent the commit if any issues are found.
 
-This hook will scan the changes you are about to push for issues.
-
-Create a file named `.git/hooks/pre-push` in your repository and add the following code:
-
-```bash
-#!/bin/bash
-
-# Get the remote repository URL
-REMOTE_URL=$(git config --get remote.origin.url)
-
-# Get the current branch
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# Send the push event to the V-Raptor server for analysis
-RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d "{\"ref\": \"refs/heads/$BRANCH\", \"repository\": {\"clone_url\": \"$REMOTE_URL\"}}" http://localhost:8000/webhook)
-
-# If the server returns a non-zero exit code, abort the push
-if [ "$RESPONSE" != "0" ]; then
-  echo "V-Raptor found issues in your code. Please fix them before pushing."
-  exit 1
-fi
-
-exit 0
-```
-
-Make the hook executable:
-
-```bash
-chmod +x .git/hooks/pre-push
-```
-
-### Webhook Mode (Continuous Analysis)
+## Server Mode (Continuous Analysis)
 
 For continuous analysis, V-Raptor can listen for webhook events from your Git provider (e.g., GitHub, GitLab). When a `push` event occurs, V-Raptor will automatically analyze the commit diff for potential vulnerabilities.
 
 This mode requires two components to be running:
 
-1.  **Webhook Server:** This is a lightweight server that listens for incoming webhooks.
+1.  **Web Server:** This is a Flask-based web application that provides the web UI and the webhook endpoint.
 2.  **RQ Worker:** This is a background worker that processes the analysis jobs.
 
-**To start the webhook server:**
+**To start the web server:**
 ```bash
-./run.sh start-server
+./run.sh --start-web
 ```
-The server will run on `http://localhost:8000`. You will need to configure your Git repository's webhooks to point to this address.
+The server will run on `http://localhost:5000`. You will need to configure your Git repository's webhooks to point to this address (e.g., `http://your-server-ip:5000/webhook`).
 
 **To start the RQ worker:**
 ```bash
-./run.sh start-worker
+./run.sh --start-worker
 ```
 The worker will listen for jobs on the Redis queue and execute them.
+
+You can also use Docker Compose to run all the services together:
+```bash
+docker-compose up --build
+```

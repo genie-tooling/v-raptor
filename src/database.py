@@ -13,7 +13,7 @@ class Repository(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     url = Column(String, nullable=False, unique=True)
-    primary_branch = Column(String, nullable=False)
+    primary_branch = Column(String, nullable=True)
     scans = relationship("Scan", back_populates="repository")
 
 class ScanStatus(enum.Enum):
@@ -51,6 +51,20 @@ class Finding(Base):
     scan = relationship("Scan", back_populates="findings")
     evidence = relationship("Evidence", back_populates="finding", cascade="all, delete-orphan")
     patch = relationship("Patch", uselist=False, back_populates="finding", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'scan_id': self.scan_id,
+            'file_path': self.file_path,
+            'line_number': self.line_number,
+            'code_snippet': self.code_snippet,
+            'description': self.description,
+            'severity': self.severity,
+            'confidence_score': self.confidence_score,
+            'status': self.status,
+            'cve_id': self.cve_id,
+        }
 
 class Evidence(Base):
     __tablename__ = 'evidence'

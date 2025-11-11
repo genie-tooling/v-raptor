@@ -1,5 +1,5 @@
 import argparse
-from src.database import get_session, init_db, Repository
+from src.database import get_session, init_db, Repository, Scan, Finding
 from src.orchestrator import Orchestrator
 from src.vcs import VCSService
 from src.worker import start_worker
@@ -9,15 +9,21 @@ def main():
     parser = argparse.ArgumentParser(description='V-Raptor')
     parser.add_argument('--scan-url', help='The URL of the repository to scan.')
     parser.add_argument('--scan-commit', help='The commit hash to scan.')
+    parser.add_argument('--scan-local', help='The path to a local repository to scan.')
     parser.add_argument('--start-worker', action='store_true', help='Starts a worker process.')
     parser.add_argument('--start-web', action='store_true', help='Starts the web server.')
     parser.add_argument('--init-db', action='store_true', help='Initializes the database.')
+    parser.add_argument('--output-json', action='store_true', help='Outputs the scan findings in JSON format.')
 
     args = parser.parse_args()
 
     if args.init_db:
         init_db()
         print("Database initialized.")
+        return
+    
+    if not args.scan_url and not args.scan_local and not args.start_worker and not args.start_web:
+        parser.print_help()
         return
 
     try:
@@ -54,13 +60,28 @@ def main():
         app.run(debug=True)
         return
 
-    if not args.scan_url:
-        print("Please provide a repository URL to scan with --scan-url.")
-        return
-
     session = get_session()()
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
+
+    if args.scan_local:
+        print(f"--- Starting local scan for {args.scan_local} ---")
+        orchestrator.run_local_scan(args.scan_local)
+        print("--- Scan complete. ---")
+        if args.output_json:
+            import json
+            # get the last scan for the local repo and print findings
+            repo = session.query(Repository).filter_by(url=args.scan_local).order_by(Repository.id.desc()).first()
+            if repo:
+                scan = session.query(Scan).filter_by(repository_id=repo.id).order_by(Scan.id.desc()).first()
+                if scan:
+                    findings = session.query(Finding).filter_by(scan_id=scan.id).all()
+                    print(json.dumps([finding.to_dict() for finding in findings], indent=4))
+        return
+
+    if not args.scan_url:
+        print("Please provide a repository URL to scan with --scan-url.")
+        return
 
     repo = session.query(Repository).filter_by(url=args.scan_url).first()
     if not repo:
