@@ -1,6 +1,19 @@
 #!/bin/bash
+
+# Check for uv
+if ! [ -x "$(command -v uv)" ]; then
+  echo 'Error: uv is not installed. Please install it first.' >&2
+  exit 1
+fi
+
+# Check for .venv and create if it doesn't exist
+if [ ! -d ".venv" ]; then
+  echo "Creating virtual environment with uv..."
+  uv venv
+fi
+
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install .
 
 # Check if go is installed
 if ! [ -x "$(command -v go)" ]; then
