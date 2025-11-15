@@ -219,14 +219,70 @@ curl -X POST -H "Content-Type: application/json" \
 
 **Failure Response:**
 
+
+
 ```json
+
+
 
 {
 
+
+
   "status": "failure",
+
+
 
   "message": "Could not get latest commit hash for https://github.com/your-username/your-repo.git."
 
+
+
 }
 
+
+
 ```
+
+
+
+
+
+
+
+## Screenshots
+
+
+
+
+
+
+
+### Scan Results
+
+
+
+![Scan Results](screenshots/scan_results.png)
+
+
+
+
+
+
+
+### Finding Details
+
+
+
+![Finding Details](screenshots/finding.png)
+
+
+
+
+
+
+
+### Code Quality
+
+
+
+![Code Quality](screenshots/quality.png)

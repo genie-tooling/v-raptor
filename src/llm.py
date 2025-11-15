@@ -147,7 +147,12 @@ Example response:
         if existing_findings:
             existing_findings_str = "\n\n**Existing Findings:**\n"
             for finding in existing_findings:
-                existing_findings_str += f"- Line {finding.line_number}: {finding.description}\n"
+                existing_findings_str += f"- **Line {finding.line_number}:** {finding.description}\n"
+
+        is_test_file = 'test' in file_path.lower()
+        test_file_instruction = ""
+        if is_test_file:
+            test_file_instruction = "\n- **This is a test file.** Do not report hardcoded secrets or credentials as vulnerabilities, as they are likely to be intentional for testing purposes."
 
         prompt = f"""You are a senior security engineer with expertise in code analysis. Your task is to analyze the following file for potential security vulnerabilities.
 
@@ -162,11 +167,11 @@ Example response:
 
 1.  **Context is Key:** Analyze the code within the context of the file's purpose. For example, a line in a `.gitignore` file is not a vulnerability, but a configuration setting.
 2.  **High-Confidence Findings Only:** Report only vulnerabilities that you are highly confident about. If you are unsure, do not report it.
-3.  **Do Not Duplicate:** Do not report vulnerabilities that are already listed in the "Existing Findings" section.
+3.  **Do Not Duplicate:** Do not report vulnerabilities that are already listed in the "Existing Findings" section. Your findings should be net new and not overlap with the existing findings.
 4.  **Ignore Non-Vulnerabilities:**
     -   Do not report entries in `.gitignore` files as vulnerabilities.
     -   Do not report the mere presence of a library unless a specific version is known to be vulnerable.
-    -   Do not report commented-out code unless it contains sensitive information.
+    -   Do not report commented-out code unless it contains sensitive information.{test_file_instruction}
 
 **Output Format:**
 

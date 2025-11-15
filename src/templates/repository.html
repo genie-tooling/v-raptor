@@ -13,12 +13,16 @@
 <div class="card border-primary mb-3">
     <div class="card-header">Run New Scan</div>
     <div class="card-body">
-        <form action="/run_scan/{{ repo.id }}" method="post" style="display: inline;">
-            <button type="submit" class="btn btn-primary">Run New Deep Scan</button>
-            <div class="form-check form-switch d-inline-block ms-3">
-                <input class="form-check-input" type="checkbox" name="auto_patch" value="true" id="autoPatchSwitch">
-                <label class="form-check-label" for="autoPatchSwitch">Automatically Generate Patches</label>
+        <form action="/run_scan/{{ repo.id }}" method="post" class="d-inline">
+            <div class="form-check form-switch d-inline-block">
+                <input class="form-check-input" type="checkbox" id="auto_patch" name="auto_patch">
+                <label class="form-check-label" for="auto_patch">Auto-Patch</label>
             </div>
+            <div class="form-check form-switch d-inline-block ms-3">
+                <input class="form-check-input" type="checkbox" id="include_tests" name="include_tests">
+                <label class="form-check-label" for="include_tests">Include Tests</label>
+            </div>
+            <button type="submit" class="btn btn-primary">Run Deep Scan</button>
         </form>
         <form action="/link_cves/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
             <button type="submit" class="btn btn-info">Link CVEs to Findings</button>

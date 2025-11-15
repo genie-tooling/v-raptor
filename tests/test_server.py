@@ -145,7 +145,7 @@ class TestServer(unittest.TestCase):
         response = self.app.post(f'/run_scan/{repo.id}')
         self.assertEqual(response.status_code, 302) # Redirect
         scan = self.session.query(Scan).filter_by(repository_id=repo.id).first()
-        self.mock_q.enqueue.assert_called_once_with('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=False)
+        self.mock_q.enqueue.assert_called_once_with('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=False, include_tests=False)
 
     def test_scan_new_commits_route(self):
         """Test the scan_new_commits route."""

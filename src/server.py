@@ -1,6 +1,6 @@
 import os
 import re
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.orm import selectinload
 from flask import g, Flask, render_template, request, redirect, url_for, flash, jsonify
 from redis import Redis
@@ -145,8 +145,43 @@ def failed_jobs():
 @app.route('/reports')
 def reports():
     session = g.db_session
-    top_vulnerabilities = session.query(Finding.description, func.count(Finding.id).label('count')).group_by(Finding.description).order_by(func.count(Finding.id).desc()).limit(5).all()
-    top_repos = session.query(Repository.id, Repository.name, func.count(Finding.id).label('count')).select_from(Repository).join(Scan).join(Finding).group_by(Repository.id, Repository.name).order_by(func.count(Finding.id).desc()).limit(5).all()
+    
+    # Subquery to find the latest scan_id for each repository
+    latest_scan_ids_subquery = session.query(
+        Scan.repository_id,
+        func.max(Scan.id).label('latest_scan_id')
+    ).group_by(Scan.repository_id).subquery()
+
+    top_vulnerabilities = session.query(
+        Finding.description,
+        func.count(Finding.id).label('count')
+    ).join(
+        Scan,
+        Finding.scan_id == Scan.id
+    ).join(
+        latest_scan_ids_subquery,
+        Scan.repository_id == latest_scan_ids_subquery.c.repository_id
+    ).filter(
+        Scan.id == latest_scan_ids_subquery.c.latest_scan_id
+    ).group_by(Finding.description).order_by(func.count(Finding.id).desc()).limit(5).all()
+
+    top_repos = session.query(
+        Repository.id,
+        Repository.name,
+        func.count(Finding.id).label('count')
+    ).join(
+        Scan,
+        Repository.id == Scan.repository_id
+    ).join(
+        Finding,
+        Finding.scan_id == Scan.id
+    ).join(
+        latest_scan_ids_subquery,
+        Scan.repository_id == latest_scan_ids_subquery.c.repository_id
+    ).filter(
+        Scan.id == latest_scan_ids_subquery.c.latest_scan_id
+    ).group_by(Repository.id, Repository.name).order_by(func.count(Finding.id).desc()).limit(5).all()
+
     return render_template('reports.html', top_vulnerabilities=top_vulnerabilities, top_repos=top_repos)
 
 @app.route('/failed_jobs/<job_id>')
@@ -162,7 +197,8 @@ def dashboard():
     recent_scans = session.query(Scan).order_by(Scan.created_at.desc()).limit(5).all()
     findings_by_severity = orchestrator.get_findings_by_severity()
     findings_by_repo = orchestrator.get_findings_by_repo()
-    return render_template('dashboard.html', metrics=metrics, recent_scans=recent_scans, findings_by_severity=findings_by_severity, findings_by_repo=findings_by_repo)
+    findings_by_repo_json = [[repo, count] for repo, count in findings_by_repo]
+    return render_template('dashboard.html', metrics=metrics, recent_scans=recent_scans, findings_by_severity=findings_by_severity, findings_by_repo=findings_by_repo_json)
 
 @app.route('/')
 def index():
@@ -323,11 +359,12 @@ def run_scan(repo_id):
     repo = session.query(Repository).get(repo_id)
     if repo:
         auto_patch = 'auto_patch' in request.form
+        include_tests = 'include_tests' in request.form
         scan = Scan(repository_id=repo.id, scan_type='deep', status='queued', auto_patch_enabled=auto_patch)
         session.add(scan)
         session.commit()
         app.logger.info(f"--- Created scan with id: {scan.id} ---")
-        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=auto_patch)
+        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=auto_patch, include_tests=include_tests)
         scan.job_id = job.id
         session.commit()
         flash(f"Deep scan initiated for '{repo.name}'.", 'info')
@@ -392,7 +429,7 @@ def generate_patch(finding_id):
     session = g.db_session
     vcs_service = VCSService(git_provider='github', token='')
     orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
-    orchestrator.generate_patch_for_finding(finding_id)
+    orchestrator.rewrite_remediation(finding_id)
     flash(f"Patch generation initiated for Finding #{finding_id}.", 'info')
     return redirect(url_for('finding', finding_id=finding_id))
 
@@ -477,7 +514,8 @@ def chat_with_quality_interpretation(interpretation_id):
         return jsonify({'error': 'Message is required'}), 400
 
     session = g.db_session
-    orchestrator = Orchestrator(None, session, None)
+    vcs_service = VCSService(git_provider='github', token='')
+    orchestrator = Orchestrator(vcs_service, session, None)
     response = orchestrator.chat_with_quality_interpretation(interpretation_id, message)
     return jsonify({'response': response})
 
@@ -529,10 +567,25 @@ def scan(scan_id):
             findings_query = findings_query.filter(Finding.description.ilike(f"%{keyword}%"))
 
         if sort_by == 'severity':
+            severity_order = [
+                'CRITICAL',
+                'HIGH',
+                'MEDIUM',
+                'LOW',
+                'UNKNOWN'
+            ]
+            # Create a CASE statement for custom sorting
+            case_statement = case(
+                *[
+                    (Finding.severity == severity, index)
+                    for index, severity in enumerate(severity_order)
+                ],
+                else_=len(severity_order) # Unknown severities go last
+            )
             if sort_order == 'desc':
-                findings_query = findings_query.order_by(Finding.severity.desc())
+                findings_query = findings_query.order_by(case_statement.desc())
             else:
-                findings_query = findings_query.order_by(Finding.severity.asc())
+                findings_query = findings_query.order_by(case_statement.asc())
         elif sort_by == 'file':
             if sort_order == 'desc':
                 findings_query = findings_query.order_by(Finding.file_path.desc())
@@ -615,7 +668,8 @@ def update_patch(finding_id):
 def chat(finding_id):
     message = request.json['message']
     session = g.db_session
-    orchestrator = Orchestrator(None, session, di.google_web_search)
+    vcs_service = VCSService(git_provider='github', token='')
+    orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
     response = orchestrator.chat_with_finding(finding_id, message)
     return {'response': response}
 

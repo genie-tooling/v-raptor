@@ -1,11 +1,14 @@
+import os
 from .database import Finding, ChatMessage, QualityInterpretation
 from .llm import LLMService
+from .vcs import VCSService
 
 
 class ChatService:
-    def __init__(self, db_session, llm_service: LLMService):
+    def __init__(self, db_session, llm_service: LLMService, vcs_service):
         self.db_session = db_session
         self.llm_service = llm_service
+        self.vcs_service = vcs_service
 
     def chat_with_finding(self, finding_id, message):
 
@@ -21,6 +24,15 @@ class ChatService:
         self.db_session.add(user_message)
         self.db_session.commit()
 
+        # Get the file content
+        try:
+            local_path = self.vcs_service.clone_repo(finding.scan.repository.url)
+            file_path = os.path.join(local_path, finding.file_path)
+            with open(file_path, 'r') as f:
+                file_content = f.read()
+        except Exception as e:
+            file_content = f"Error getting file content: {e}"
+
         history = self.db_session.query(ChatMessage).filter_by(finding_id=finding_id).order_by(ChatMessage.created_at).all()
         prompt = f"""You are a senior security engineer. You are chatting with a developer about the following vulnerability:
 
@@ -31,6 +43,12 @@ Code Snippet:
 ```
 {finding.code_snippet}
 ```
+
+Full file content:
+```
+{file_content}
+```
+
 Here is the chat history:
 
 """
@@ -72,6 +90,15 @@ Here is the chat history:
         self.db_session.add(user_message)
         self.db_session.commit()
 
+        # Get the file content
+        try:
+            local_path = self.vcs_service.clone_repo(interpretation.quality_metric.scan.repository.url)
+            file_path = os.path.join(local_path, interpretation.quality_metric.file_path)
+            with open(file_path, 'r') as f:
+                file_content = f.read()
+        except Exception as e:
+            file_content = f"Error getting file content: {e}"
+
         history = self.db_session.query(ChatMessage).filter_by(quality_interpretation_id=interpretation_id).order_by(ChatMessage.created_at).all()
 
         prompt = f"""You are a senior software engineer and code quality expert. You are chatting with a developer about the following code quality interpretation:
@@ -79,6 +106,11 @@ Here is the chat history:
 File: {interpretation.quality_metric.file_path}
 Interpretation:
 {interpretation.interpretation}
+
+Full file content:
+```
+{file_content}
+```
 
 Here is the chat history:
 

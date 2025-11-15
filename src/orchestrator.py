@@ -36,7 +36,7 @@ class Orchestrator:
         self.scanner = Scanner(db_session, self.llm_service, self.vulnerability_processor)
         self.cve_linker = CveLinker(db_session, self.llm_service)
         self.dashboard = Dashboard(db_session)
-        self.chat_service = ChatService(db_session, self.llm_service)
+        self.chat_service = ChatService(db_session, self.llm_service, self.vcs_service)
 
     def run_analysis_on_commit(self, repo_url, commit_hash, repo_id, auto_patch=False, wait_for_completion=False):
         """Runs the analysis on a commit."""
@@ -91,7 +91,7 @@ class Orchestrator:
             self.db_session.commit()
             logging.info(f"Error during analysis of commit {commit_hash}: {e}")
 
-    def run_deep_scan(self, repo_url, scan_id, auto_patch=False):
+    def run_deep_scan(self, repo_url, scan_id, auto_patch=False, include_tests=False):
         """Runs a deep scan on a repository."""
         scan = self.db_session.query(Scan).get(scan_id)
         if not scan:
@@ -108,7 +108,7 @@ class Orchestrator:
             local_path = self.vcs_service.clone_repo(repo_url, branch=repository.primary_branch)
             
             logging.info("Starting SAST scan...")
-            self.scanner.run_sast_scan(local_path, scan)
+            self.scanner.run_sast_scan(local_path, scan, include_tests=include_tests)
             logging.info("SAST scan finished.")
 
             logging.info("Starting intelligent CVE scan...")
@@ -116,7 +116,7 @@ class Orchestrator:
             logging.info("Intelligent CVE scan finished.")
 
             logging.info("Starting source code scan...")
-            self.scanner.run_source_code_scan(scan, local_path, auto_patch=auto_patch)
+            self.scanner.run_source_code_scan(scan, local_path, auto_patch=auto_patch, include_tests=include_tests)
             logging.info("Source code scan finished.")
 
             logging.info("Starting secret scan...")

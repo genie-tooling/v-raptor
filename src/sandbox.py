@@ -19,8 +19,7 @@ class SandboxService:
             container = self.client.containers.run(
                 self.image_name, 
                 command='tail -f /dev/null', 
-                detach=True,
-                network_mode='host' # Use host network to avoid networking issues
+                detach=True
             )
             print(f"Sandbox created with ID: {container.id[:12]}")
             return container.id

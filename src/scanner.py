@@ -19,7 +19,7 @@ class Scanner:
         self.llm_service = llm_service
         self.vulnerability_processor = vulnerability_processor
 
-    def run_sast_scan(self, repo_path, scan):
+    def run_sast_scan(self, repo_path, scan, include_tests=False):
         """Runs a SAST scan on a repository using semgrep and bandit."""
         logging.info("\n--- Running SAST Scan ---")
         scan.status_message = "Running SAST scan..."
@@ -36,6 +36,8 @@ class Scanner:
                 report_path,
                 repo_path
             ]
+            if not include_tests:
+                command.extend(['--exclude', 'tests', '--exclude', 'test'])
             subprocess.run(command, check=True, capture_output=True, text=True)
             if os.path.exists(report_path):
                 with open(report_path, 'r') as f:
@@ -68,6 +70,8 @@ class Scanner:
                 '-o',
                 report_path
             ]
+            if not include_tests:
+                command.extend(['-x', 'tests', '-x', 'test'])
             result = subprocess.run(command, capture_output=True, text=True)
             if result.returncode not in [0, 1]:
                 logging.error(f"Bandit scan failed with exit code {result.returncode}")
@@ -99,14 +103,16 @@ class Scanner:
         self.db_session.commit()
         return self.run_dependency_scan(repo_path, scan)
 
-    def run_source_code_scan(self, scan, repo_path, auto_patch=False):
+    def run_source_code_scan(self, scan, repo_path, auto_patch=False, include_tests=False):
         logging.info("Starting source code scan...")
         scan.status_message = "Scanning source code..."
         self.db_session.commit()
         
-        ignorable_files = ['.gitignore']
-        ignorable_extensions = ['.db', '.sqlite3', '.log', '.pyc', '.egg-info', '.DS_Store']
+        ignorable_files = ['.gitignore', 'semgrep-report.json', 'bandit-report.json']
+        ignorable_extensions = ['.db', '.sqlite3', '.log', '.pyc', '.egg-info', '.DS_Store', '.md', '.txt', '.rst', '.yml']
         ignorable_dirs = ['__pycache__', '.git', '.venv', '.venv2', 'node_modules', 'build', 'dist']
+        if not include_tests:
+            ignorable_dirs.extend(['tests', 'test'])
 
         for root, dirs, files in os.walk(repo_path):
             # Remove ignorable directories from the list of directories to traverse

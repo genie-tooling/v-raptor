@@ -11,6 +11,10 @@ V-Raptor is an AI agent for automated code analysis, bug detection, and remediat
 - **Webhook Support:** Continuously analyze code by listening for webhook events from your Git provider.
 - **Web UI:** A simple web UI to browse scan results, manage repositories, and configure the application.
 
+## Screenshots
+
+![Scan Results](docs/screenshots/scan_results.png)
+
 ## Getting Started
 
 ### Prerequisites

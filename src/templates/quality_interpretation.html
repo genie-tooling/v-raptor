@@ -40,7 +40,7 @@
     <div class="card-body">
         <div id="chat-history" class="mb-3" style="height: 300px; overflow-y: scroll; border: 1px solid #444; padding: 1rem; border-radius: 4px;">
             {% for message in chat_history %}
-                <p><strong>{{ message.sender }}:</strong> {{ message.message }}</p>
+                <pre style="white-space: pre-wrap;"><strong>{{ message.sender }}:</strong> {{ message.message }}</pre>
             {% endfor %}
         </div>
         <form id="chat-form">
@@ -50,6 +50,7 @@
                 <button type="button" id="reset-chat-btn" class="btn btn-danger">Reset Chat</button>
             </div>
         </form>
+        <div id="loading-indicator" style="display: none;">Loading...</div>
     </div>
 </div>
 
@@ -64,10 +65,14 @@
             const message = chatInput.value;
             chatInput.value = '';
 
-            const userMessage = document.createElement('p');
+            const userMessage = document.createElement('pre');
+            userMessage.style.whiteSpace = 'pre-wrap';
             userMessage.innerHTML = `<strong>You:</strong> ${message}`;
             chatHistory.appendChild(userMessage);
             chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            const loadingIndicator = document.getElementById('loading-indicator');
+            loadingIndicator.style.display = 'block';
 
             const response = await fetch(`/chat_with_quality_interpretation/{{ interpretation.id }}`, {
                 method: 'POST',
@@ -78,10 +83,13 @@
             });
 
             const data = await response.json();
-            const botMessage = document.createElement('p');
+            const botMessage = document.createElement('pre');
+            botMessage.style.whiteSpace = 'pre-wrap';
             botMessage.innerHTML = `<strong>V-Raptor:</strong> ${data.response}`;
             chatHistory.appendChild(botMessage);
             chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            loadingIndicator.style.display = 'none';
         });
 
         const resetChatBtn = document.getElementById('reset-chat-btn');
