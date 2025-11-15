@@ -198,7 +198,22 @@ def dashboard():
     findings_by_severity = orchestrator.get_findings_by_severity()
     findings_by_repo = orchestrator.get_findings_by_repo()
     findings_by_repo_json = [[repo, count] for repo, count in findings_by_repo]
-    return render_template('dashboard.html', metrics=metrics, recent_scans=recent_scans, findings_by_severity=findings_by_severity, findings_by_repo=findings_by_repo_json)
+    
+    avg_quality_metrics = orchestrator.dashboard.get_average_quality_metrics_by_repo()
+    quality_metrics_json = {
+        'labels': [row.name for row in avg_quality_metrics],
+        'avg_complexity': [round(row.avg_complexity or 0, 2) for row in avg_quality_metrics],
+        'avg_lloc': [round(row.avg_lloc or 0, 2) for row in avg_quality_metrics]
+    }
+
+    return render_template(
+        'dashboard.html', 
+        metrics=metrics, 
+        recent_scans=recent_scans, 
+        findings_by_severity=findings_by_severity, 
+        findings_by_repo=findings_by_repo_json,
+        quality_metrics=quality_metrics_json
+    )
 
 @app.route('/')
 def index():

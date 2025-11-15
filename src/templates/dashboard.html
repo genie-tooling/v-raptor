@@ -43,7 +43,7 @@
     </div>
 </div>
 <div class="row mt-4">
-    <div class="col-md-6">
+    <div class="col-md-4">
         <div class="card border-secondary">
             <div class="card-header">Findings by Severity</div>
             <div class="card-body">
@@ -51,11 +51,19 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-4">
         <div class="card border-secondary">
             <div class="card-header">Findings by Repository</div>
             <div class="card-body">
                 <canvas id="repoChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-info">
+            <div class="card-header">Code Quality Overview</div>
+            <div class="card-body">
+                <canvas id="qualityChart"></canvas>
             </div>
         </div>
     </div>
@@ -92,6 +100,22 @@
             }]
         };
 
+        const qualityData = {
+            labels: {{ quality_metrics.labels | tojson }},
+            datasets: [
+                {
+                    label: 'Avg. Cyclomatic Complexity',
+                    data: {{ quality_metrics.avg_complexity | tojson }},
+                    backgroundColor: '#17a2b8', // Info Blue
+                },
+                {
+                    label: 'Avg. Logical Lines of Code',
+                    data: {{ quality_metrics.avg_lloc | tojson }},
+                    backgroundColor: '#6f42c1', // Purple
+                }
+            ]
+        };
+
         const severityChart = new Chart(document.getElementById('severityChart'), {
             type: 'pie',
             data: severityData,
@@ -100,6 +124,18 @@
         const repoChart = new Chart(document.getElementById('repoChart'), {
             type: 'bar',
             data: repoData,
+        });
+
+        const qualityChart = new Chart(document.getElementById('qualityChart'), {
+            type: 'bar',
+            data: qualityData,
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
         });
     });
 </script>
