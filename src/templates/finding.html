@@ -11,7 +11,12 @@
         <div class="card border-primary mb-3">
             <div class="card-header">Details</div>
             <div class="card-body">
-                <p><strong>Description:</strong> {{ finding.description }}</p>
+                <p><strong>Description:</strong>
+                    {{ finding.description_text }}
+                    {% if finding.description_url %}
+                        <a href="{{ finding.description_url }}" target="_blank" rel="noopener noreferrer">[{{ finding.rule_id }}]</a>
+                    {% endif %}
+                </p>
                 <p><strong>File:</strong> {{ finding.file_path }}</p>
                 <p><strong>Line:</strong> {{ finding.line_number }}</p>
                 <p><strong>Severity:</strong>
@@ -102,6 +107,7 @@
                     <div class="input-group">
                         <input type="text" id="chat-input" class="form-control" placeholder="Ask a question about this finding...">
                         <button type="submit" class="btn btn-primary">Send</button>
+                        <button type="button" id="reset-chat-btn" class="btn btn-danger">Reset Chat</button>
                     </div>
                 </form>
             </div>
@@ -145,6 +151,24 @@
             botMessage.innerHTML = `<strong>V-Raptor:</strong> ${data.response}`;
             chatHistory.appendChild(botMessage);
             chatHistory.scrollTop = chatHistory.scrollHeight;
+        });
+
+        const resetChatBtn = document.getElementById('reset-chat-btn');
+
+        resetChatBtn.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to reset the chat history?')) {
+                const response = await fetch(`/reset_chat/finding/{{ finding.id }}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    chatHistory.innerHTML = '';
+                    alert(data.message);
+                } else {
+                    alert(`Error: ${data.message}`);
+                }
+            }
         });
     });
 </script>

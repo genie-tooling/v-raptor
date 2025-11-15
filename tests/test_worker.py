@@ -28,9 +28,9 @@ class TestWorker(unittest.TestCase):
         mock_orchestrator = MagicMock()
         mock_get_orchestrator.return_value = mock_orchestrator
 
-        worker.run_deep_scan_job('test_url', auto_patch=True)
+        worker.run_deep_scan_job('test_url', 1, auto_patch=True)
 
-        mock_orchestrator.run_deep_scan.assert_called_once_with('test_url', auto_patch=True)
+        mock_orchestrator.run_deep_scan.assert_called_once_with('test_url', 1, auto_patch=True)
         mock_orchestrator.db_session.close.assert_called_once()
 
     @patch('src.worker._get_orchestrator')

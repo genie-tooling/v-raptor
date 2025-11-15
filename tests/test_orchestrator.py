@@ -36,24 +36,26 @@ class TestOrchestrator(unittest.TestCase):
     def test_validate_vulnerability_with_search_false_positive(self):
         """Test that validate_vulnerability_with_search correctly identifies a false positive."""
         self.google_web_search_mock.return_value = 'some search results'
-        self.llm_instance.validate_vulnerability.return_value = '{"false_positive": true}'
-        vulnerability = {
-            'description': 'some vulnerability',
-            'code_snippet': 'some code'
-        }
-        result = self.orchestrator.validate_vulnerability_with_search(vulnerability)
-        self.assertFalse(result)
+        with patch.object(self.orchestrator.vulnerability_processor.llm_service, 'validate_vulnerability') as mock_validate_vulnerability:
+            mock_validate_vulnerability.return_value = '{"false_positive": true}'
+            vulnerability = {
+                'description': 'some vulnerability',
+                'code_snippet': 'some code'
+            }
+            result = self.orchestrator.vulnerability_processor.validate_vulnerability_with_search(vulnerability)
+            self.assertFalse(result)
 
     def test_validate_vulnerability_with_search_not_false_positive(self):
         """Test that validate_vulnerability_with_search correctly identifies a non-false positive."""
         self.google_web_search_mock.return_value = 'some search results'
-        self.llm_instance.validate_vulnerability.return_value = '{"false_positive": false}'
-        vulnerability = {
-            'description': 'some vulnerability',
-            'code_snippet': 'some code'
-        }
-        result = self.orchestrator.validate_vulnerability_with_search(vulnerability)
-        self.assertTrue(result)
+        with patch.object(self.orchestrator.vulnerability_processor.llm_service, 'validate_vulnerability') as mock_validate_vulnerability:
+            mock_validate_vulnerability.return_value = '{"false_positive": false}'
+            vulnerability = {
+                'description': 'some vulnerability',
+                'code_snippet': 'some code'
+            }
+            result = self.orchestrator.vulnerability_processor.validate_vulnerability_with_search(vulnerability)
+            self.assertTrue(result)
 
 class TestOrchestratorLocalScan(unittest.TestCase):
     def setUp(self):
@@ -71,21 +73,18 @@ class TestOrchestratorLocalScan(unittest.TestCase):
 
         self.vcs_service_mock = MagicMock()
         self.google_web_search_mock = MagicMock()
+        self.llm_instance = MagicMock() # Our mock LLMService instance
         
-        # Patch LLMService to prevent real calls
-        self.llm_patcher = patch('src.orchestrator.LLMService')
-        self.llm_service_mock = self.llm_patcher.start()
-        
-        self.orchestrator = Orchestrator(self.vcs_service_mock, self.db_session, self.google_web_search_mock)
+        self.orchestrator = Orchestrator(self.vcs_service_mock, self.db_session, self.google_web_search_mock, llm_service=self.llm_instance)
 
         # We need to mock all the scan runners
-        patcher_sast = patch.object(self.orchestrator, 'run_sast_scan')
-        patcher_cve = patch.object(self.orchestrator, 'run_intelligent_cve_scan')
-        patcher_source = patch.object(self.orchestrator, 'run_source_code_scan')
-        patcher_secret = patch.object(self.orchestrator, 'run_secret_scan')
-        patcher_dep = patch.object(self.orchestrator, 'run_dependency_scan')
-        patcher_config = patch.object(self.orchestrator, 'run_config_scan')
-        patcher_quality = patch.object(self.orchestrator, 'run_quality_scan')
+        patcher_sast = patch.object(self.orchestrator.scanner, 'run_sast_scan')
+        patcher_cve = patch.object(self.orchestrator.scanner, 'run_intelligent_cve_scan')
+        patcher_source = patch.object(self.orchestrator.scanner, 'run_source_code_scan')
+        patcher_secret = patch.object(self.orchestrator.scanner, 'run_secret_scan')
+        patcher_dep = patch.object(self.orchestrator.scanner, 'run_dependency_scan')
+        patcher_config = patch.object(self.orchestrator.scanner, 'run_config_scan')
+        patcher_quality = patch.object(self.orchestrator.scanner, 'run_quality_scan')
 
         self.mock_sast = patcher_sast.start()
         self.mock_cve = patcher_cve.start()
@@ -100,7 +99,6 @@ class TestOrchestratorLocalScan(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
         self.db_session.close()
-        self.llm_patcher.stop()
 
     def test_run_local_scan(self):
         """Test that run_local_scan correctly orchestrates a local scan."""

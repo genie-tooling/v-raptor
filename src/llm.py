@@ -1,7 +1,5 @@
 import os
 import re
-import json
-import logging
 from . import config
 from .llm_providers.base import BaseLLMProvider
 from .llm_providers.gemini import GeminiProvider
@@ -141,9 +139,16 @@ Example response:
 """
         return self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
 
-    def analyze_file(self, file_path):
+    def analyze_file(self, file_path, existing_findings=None):
         with open(file_path, 'r') as f:
             content = f.read()
+
+        existing_findings_str = ""
+        if existing_findings:
+            existing_findings_str = "\n\n**Existing Findings:**\n"
+            for finding in existing_findings:
+                existing_findings_str += f"- Line {finding.line_number}: {finding.description}\n"
+
         prompt = f"""You are a senior security engineer with expertise in code analysis. Your task is to analyze the following file for potential security vulnerabilities.
 
 **File Information:**
@@ -152,12 +157,13 @@ Example response:
 ```
 {content}
 ```
-
+{existing_findings_str}
 **Analysis Instructions:**
 
 1.  **Context is Key:** Analyze the code within the context of the file's purpose. For example, a line in a `.gitignore` file is not a vulnerability, but a configuration setting.
 2.  **High-Confidence Findings Only:** Report only vulnerabilities that you are highly confident about. If you are unsure, do not report it.
-3.  **Ignore Non-Vulnerabilities:**
+3.  **Do Not Duplicate:** Do not report vulnerabilities that are already listed in the "Existing Findings" section.
+4.  **Ignore Non-Vulnerabilities:**
     -   Do not report entries in `.gitignore` files as vulnerabilities.
     -   Do not report the mere presence of a library unless a specific version is known to be vulnerable.
     -   Do not report commented-out code unless it contains sensitive information.
@@ -170,6 +176,7 @@ Respond with a JSON object containing a list of vulnerabilities. Each vulnerabil
 - `description`: A short, one-sentence description of the vulnerability and why it is a vulnerability in this context.
 - `code_snippet`: The exact line(s) of vulnerable code from the file.
 - `confidence`: A float between 0.0 and 1.0 indicating your confidence in this finding.
+- `severity`: A string indicating the severity of the vulnerability. Must be one of `CRITICAL`, `HIGH`, `MEDIUM`, or `LOW`.
 
 If no vulnerabilities are found, respond with an empty JSON object: `{{}}`.
 
@@ -182,7 +189,8 @@ If no vulnerabilities are found, respond with an empty JSON object: `{{}}`.
       "line_number": 42,
       "description": "SQL injection vulnerability due to string formatting, allowing an attacker to execute arbitrary SQL commands.",
       "code_snippet": "cursor.execute(f\\"SELECT * FROM users WHERE username = '{{username}}'\\")",
-      "confidence": 0.95
+      "confidence": 0.95,
+      "severity": "HIGH"
     }}
   ]
 }}
@@ -192,12 +200,13 @@ If no vulnerabilities are found, respond with an empty JSON object: `{{}}`.
     def interpret_quality_metrics(self, metric):
         """Interprets the quality metrics for a file."""
         prompt = f"""
-YouYou are a senior software engineer and code quality expert.
+You are a senior software engineer and code quality expert.
 You are reviewing a file and its quality metrics.
-Your task is to provide a concise and easy-to-understand interpretation of the metrics for a typical developer.
+Your task is to provide a direct, concise, and easy-to-understand interpretation of the metrics for a typical developer.
 Focus on what the metrics mean in practice and what the developer should pay attention to.
 Do not just repeat the numbers, but explain their implications.
 For example, if the cyclomatic complexity is high, explain that it means the code is complex and might be difficult to test and maintain.
+Do not include any conversational text or questions.
 
 File: {metric.file_path}
 
@@ -209,19 +218,19 @@ Metrics:
 - Comments: {metric.comments}
 - Halstead Volume: {metric.halstead_volume}
 
-Interpretation:
+Interpretation (provide only the interpretation, no conversational text):
 """
         return self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt, is_json=False)
 
     def get_root_cause_analysis(self, code_snippet, vulnerability_type):
-        prompt = f"""You are a senior security engineer. Provide a brief explanation of this potential '{vulnerability_type}' vulnerability in the provided code snippet.
+        prompt = f"""You are a senior security engineer. Provide a direct and concise explanation of this potential '{vulnerability_type}' vulnerability in the provided code snippet.
 
 Code Snippet:
 ```
 {code_snippet}
 ```
 
-Explain the vulnerability, its potential impact, and how to fix it. Format your response as clean Markdown. Do not ask any questions."""
+Explain the vulnerability, its potential impact, and how to fix it. Format your response as clean Markdown. Do not ask any questions or include any conversational text."""
         return self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt, is_json=False)
 
     def generate_test_script(self, code_snippet, vulnerability_hypothesis):
@@ -272,7 +281,7 @@ Root Cause Analysis:
 {root_cause_analysis}
 
 Refactor the code to fix the vulnerability. Maintain existing logic and style.
-Provide ONLY the fix in the git diff format. Do not include a commit message or any other text.
+Provide ONLY the fix in the git diff format. Do not include a commit message or any other text. Do not include any conversational text.
 Start the diff with '--- a/' and '+++ b/'."""
         return self._create_chat_completion(self.patcher_client, self._get_model_name('patcher'), prompt, is_json=False)
 
@@ -309,76 +318,6 @@ Search Results:
 
 Respond with a JSON object with a single key, "false_positive", which is a boolean. Do not include any explanations or ask any questions."""
         return self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
-
-    def validate_cve(self, cve, technologies):
-        """Validates if a CVE is relevant to a repository."""
-        prompt = f"""You are a senior security engineer. Based on the following CVE and the technologies used in a repository, determine if the CVE is relevant to the repository.
-
-CVE ID: {cve['id']}
-CVE Description: {cve['description']}
-
-Technologies:
-{", ".join(technologies)}
-
-Respond with a JSON object with a single key, "relevant", which is a boolean. Do not include any explanations or ask any questions.
-Example:
-{{
-  "relevant": true
-}}
-"""
-        response_text = self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
-        try:
-            data = json.loads(response_text)
-            return data.get("relevant", False)
-        except json.JSONDecodeError:
-            logging.error(f"Error: Could not decode LLM response for CVE validation as JSON: {response_text}")
-            return False
-
-    def extract_cves_from_search(self, technology, search_results):
-        """Extracts CVEs from search results."""
-        prompt = f"""You are a security researcher. Based on the following search results for "{technology} CVE", extract the CVE IDs and their descriptions.
-
-Search results:
-{search_results}
-
-Respond with a JSON object containing a list of CVEs. Each CVE should have "id" and "description".
-Example:
-{{
-  "cves": [
-    {{
-      "id": "CVE-2021-44228",
-      "description": "Apache Log4j2 JNDI features do not protect against attacker controlled LDAP and other JNDI related endpoints."
-    }}
-  ]
-}}
-"""
-        response_text = self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
-        try:
-            data = json.loads(response_text)
-            return data.get("cves", [])
-        except json.JSONDecodeError:
-            logging.error(f"Error: Could not decode LLM response for CVE extraction as JSON: {response_text}")
-            return []
-
-    def identify_technologies(self, file_paths):
-        """Identifies the technologies used in a repository based on the file paths."""
-        prompt = f"""You are a senior software engineer. Based on the following list of file paths, identify the programming languages, frameworks, and other significant technologies used in this repository.
-
-File paths:
-{", ".join(file_paths)}
-
-Respond with a JSON object containing a single key "technologies", which is a list of strings. For example:
-{{
-  "technologies": ["Python", "Flask", "React", "Docker"]
-}}
-"""
-        response_text = self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
-        try:
-            data = json.loads(response_text)
-            return data.get("technologies", [])
-        except json.JSONDecodeError:
-            logging.error(f"Error: Could not decode LLM response for technology identification as JSON: {response_text}")
-            return []
 
     def get_available_models(self, client_type):
         client = self.scanner_client if client_type == 'scanner' else self.patcher_client

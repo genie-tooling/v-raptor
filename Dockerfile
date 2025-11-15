@@ -1,5 +1,5 @@
 # Use a standard base image
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -11,13 +11,15 @@ RUN apt-get update && \
     ninja-build \
     python3 \
     python3-pip \
+    pipx \
     git \
     curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Install security tools
 # Python tools
-RUN pip3 install --no-cache-dir semgrep bandit
+RUN pipx install semgrep && \
+    pipx install bandit
 
 # Install gitleaks
 RUN GITLEAKS_VERSION=$(curl -s "https://api.github.com/repos/gitleaks/gitleaks/releases/latest" | grep -oP '"tag_name": "v\K[0-9.]+' | head -n 1) && \
@@ -32,8 +34,13 @@ WORKDIR /app
 # Copy the application code
 COPY . /app
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install Python dependencies using uv
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
+RUN rm -rf .venv
+RUN uv venv
+RUN uv pip install .
 
 # Expose the web server port
 EXPOSE 5000

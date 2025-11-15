@@ -1,4 +1,5 @@
 import os
+import re
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from flask import g, Flask, render_template, request, redirect, url_for, flash, jsonify
@@ -239,8 +240,24 @@ def quality(repo_id):
     session = g.db_session
     repo = session.query(Repository).get(repo_id)
     scan = session.query(Scan).filter_by(repository_id=repo_id, scan_type='quality').order_by(Scan.created_at.desc()).first()
-    metrics = session.query(QualityMetric).filter_by(scan_id=scan.id).all() if scan else []
-    return render_template('quality.html', repo=repo, metrics=metrics)
+    
+    sort_by = request.args.get('sort_by', 'file_path')
+    sort_order = request.args.get('sort_order', 'asc')
+
+    if scan:
+        metrics_query = session.query(QualityMetric).filter_by(scan_id=scan.id)
+        
+        sort_column = getattr(QualityMetric, sort_by, QualityMetric.file_path)
+        if sort_order == 'desc':
+            metrics_query = metrics_query.order_by(sort_column.desc())
+        else:
+            metrics_query = metrics_query.order_by(sort_column.asc())
+            
+        metrics = metrics_query.all()
+    else:
+        metrics = []
+        
+    return render_template('quality.html', repo=repo, metrics=metrics, sort_by=sort_by, sort_order=sort_order)
 
 @app.route('/api/scans')
 def api_scans():
@@ -267,6 +284,29 @@ def scans():
 def findings():
     session = g.db_session
     findings = session.query(Finding).order_by(Finding.id.desc()).all()
+    
+    for finding in findings:
+        description_no_paren = finding.description.replace('(', '').replace(')', '')
+        url_match = re.search(r'https?://\S+', description_no_paren)
+        
+        if url_match:
+            url = url_match.group(0)
+            text = finding.description.replace(f'({url})', '').strip()
+            finding.description_text = text
+            finding.description_url = url
+            
+            # Extract rule ID
+            if 'semgrep.dev' in url:
+                finding.rule_id = url.split('/')[-1]
+            elif 'bandit.readthedocs.io' in url:
+                finding.rule_id = url.split('/')[-1].replace('.html', '')
+            else:
+                finding.rule_id = 'doc'
+        else:
+            finding.description_text = finding.description
+            finding.description_url = None
+            finding.rule_id = None
+            
     return render_template('findings.html', findings=findings)
 
 @app.route('/findings/by_description')
@@ -278,13 +318,17 @@ def findings_by_description():
 
 @app.route('/run_scan/<int:repo_id>', methods=['POST'])
 def run_scan(repo_id):
+    app.logger.info(f"--- run_scan called for repo_id: {repo_id} ---")
     session = g.db_session
     repo = session.query(Repository).get(repo_id)
     if repo:
         auto_patch = 'auto_patch' in request.form
-        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, auto_patch=auto_patch)
-        scan = Scan(repository_id=repo.id, scan_type='deep', status='queued', job_id=job.id, auto_patch_enabled=auto_patch)
+        scan = Scan(repository_id=repo.id, scan_type='deep', status='queued', auto_patch_enabled=auto_patch)
         session.add(scan)
+        session.commit()
+        app.logger.info(f"--- Created scan with id: {scan.id} ---")
+        job = q.enqueue('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=auto_patch)
+        scan.job_id = job.id
         session.commit()
         flash(f"Deep scan initiated for '{repo.name}'.", 'info')
     return redirect(url_for('repository', repo_id=repo_id))
@@ -395,33 +439,16 @@ def mark_scan_failed(scan_id):
         flash(f"Scan {scan_id} not found.", 'error')
     return redirect(url_for('scans'))
 
-@app.route('/chat_with_quality_interpretation/<int:interpretation_id>', methods=['POST'])
-def chat_with_quality_interpretation(interpretation_id):
-    data = request.get_json()
-    message = data.get('message')
-    if not message:
-        return jsonify({'error': 'Message is required'}), 400
-
-    orchestrator = Orchestrator(None, get_session()(), None)
-    response = orchestrator.chat_with_quality_interpretation(interpretation_id, message)
-    return jsonify({'response': response})
-
-@app.route('/quality_interpretation/<int:interpretation_id>')
-def quality_interpretation(interpretation_id):
-    session = g.db_session
-    interpretation = session.query(QualityInterpretation).get(interpretation_id)
-    metric = interpretation.quality_metric
-    return render_template('quality_interpretation.html', interpretation=interpretation, metric=metric)
-
 @app.route('/interpret_quality_metrics/<int:metric_id>')
 def interpret_quality_metrics(metric_id):
     session = g.db_session
     metric = session.query(QualityMetric).get(metric_id)
     if not metric:
-        return jsonify({'error': 'Metric not found'})
+        flash("Metric not found.", "error")
+        return redirect(url_for('quality', repo_id=metric.scan.repository.id))
 
     if metric.interpretation:
-        return jsonify({'interpretation': metric.interpretation.interpretation, 'interpretation_id': metric.interpretation.id})
+        return redirect(url_for('quality_interpretation', interpretation_id=metric.interpretation.id))
 
     orchestrator = Orchestrator(None, session, None)
     interpretation_text = orchestrator.llm_service.interpret_quality_metrics(metric)
@@ -430,23 +457,122 @@ def interpret_quality_metrics(metric_id):
     session.add(new_interpretation)
     session.commit()
 
-    return jsonify({'interpretation': interpretation_text, 'interpretation_id': new_interpretation.id})
+    return redirect(url_for('quality_interpretation', interpretation_id=new_interpretation.id))
+
+
+@app.route('/quality_interpretation/<int:interpretation_id>')
+def quality_interpretation(interpretation_id):
+    session = g.db_session
+    interpretation = session.query(QualityInterpretation).get(interpretation_id)
+    metric = interpretation.quality_metric
+    chat_history = session.query(ChatMessage).filter_by(quality_interpretation_id=interpretation_id).order_by(ChatMessage.created_at).all()
+    return render_template('quality_interpretation.html', interpretation=interpretation, metric=metric, chat_history=chat_history)
+
+
+@app.route('/chat_with_quality_interpretation/<int:interpretation_id>', methods=['POST'])
+def chat_with_quality_interpretation(interpretation_id):
+    data = request.get_json()
+    message = data.get('message')
+    if not message:
+        return jsonify({'error': 'Message is required'}), 400
+
+    session = g.db_session
+    orchestrator = Orchestrator(None, session, None)
+    response = orchestrator.chat_with_quality_interpretation(interpretation_id, message)
+    return jsonify({'response': response})
+
+@app.route('/reset_chat/<string:chat_type>/<int:chat_id>', methods=['POST'])
+def reset_chat(chat_type, chat_id):
+    session = g.db_session
+    if chat_type == 'finding':
+        messages = session.query(ChatMessage).filter_by(finding_id=chat_id).all()
+    elif chat_type == 'quality':
+        messages = session.query(ChatMessage).filter_by(quality_interpretation_id=chat_id).all()
+    else:
+        return jsonify({'status': 'error', 'message': 'Invalid chat type'}), 400
+
+    for message in messages:
+        session.delete(message)
+    session.commit()
+
+    return jsonify({'status': 'success', 'message': 'Chat history has been reset.'})
 
 @app.route('/scan/<int:scan_id>')
 def scan(scan_id):
     session = g.db_session
     scan = session.query(Scan).get(scan_id)
     app.logger.info(f"Scan type for scan {scan_id} is {scan.scan_type}")
+
     if scan.scan_type == 'quality':
-        return render_template('quality.html', repo=scan.repository, metrics=scan.quality_metrics)
+        sort_by = request.args.get('sort_by', 'file_path')
+        sort_order = request.args.get('sort_order', 'asc')
+        
+        metrics = sorted(scan.quality_metrics, key=lambda m: getattr(m, sort_by), reverse=sort_order == 'desc')
+        
+        return render_template('quality.html', repo=scan.repository, metrics=metrics, sort_by=sort_by, sort_order=sort_order, scan_id=scan_id)
     else:
-        return render_template('scan.html', scan=scan)
+        severity_filter = request.args.get('severity')
+        scanner_filter = request.args.get('scanner')
+        sort_by = request.args.get('sort_by', 'severity')
+        sort_order = request.args.get('sort_order', 'desc')
+        keyword = request.args.get('keyword')
+
+        findings_query = session.query(Finding).filter(Finding.scan_id == scan_id)
+
+        if severity_filter:
+            findings_query = findings_query.filter(Finding.severity == severity_filter)
+        
+        if scanner_filter:
+            findings_query = findings_query.filter(Finding.description.like(f"{scanner_filter}:%"))
+        
+        if keyword:
+            findings_query = findings_query.filter(Finding.description.ilike(f"%{keyword}%"))
+
+        if sort_by == 'severity':
+            if sort_order == 'desc':
+                findings_query = findings_query.order_by(Finding.severity.desc())
+            else:
+                findings_query = findings_query.order_by(Finding.severity.asc())
+        elif sort_by == 'file':
+            if sort_order == 'desc':
+                findings_query = findings_query.order_by(Finding.file_path.desc())
+            else:
+                findings_query = findings_query.order_by(Finding.file_path.asc())
+
+        findings = findings_query.all()
+
+        return render_template('scan.html', scan=scan, findings=findings, 
+                               severity_filter=severity_filter, scanner_filter=scanner_filter,
+                               sort_by=sort_by, sort_order=sort_order, keyword=keyword)
 
 @app.route('/finding/<int:finding_id>')
 def finding(finding_id):
     session = g.db_session
     finding = session.query(Finding).get(finding_id)
     chat_history = session.query(ChatMessage).filter_by(finding_id=finding_id).order_by(ChatMessage.created_at).all()
+    
+    if finding:
+        description_no_paren = finding.description.replace('(', '').replace(')', '')
+        url_match = re.search(r'https?://\S+', description_no_paren)
+        
+        if url_match:
+            url = url_match.group(0)
+            text = finding.description.replace(f'({url})', '').strip()
+            finding.description_text = text
+            finding.description_url = url
+            
+            # Extract rule ID
+            if 'semgrep.dev' in url:
+                finding.rule_id = url.split('/')[-1]
+            elif 'bandit.readthedocs.io' in url:
+                finding.rule_id = url.split('/')[-1].replace('.html', '')
+            else:
+                finding.rule_id = 'doc'
+        else:
+            finding.description_text = finding.description
+            finding.description_url = None
+            finding.rule_id = None
+            
     return render_template('finding.html', finding=finding, chat_history=chat_history)
 
 @app.route('/finding/<int:finding_id>/search_cve', methods=['POST'])

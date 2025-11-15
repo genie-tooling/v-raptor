@@ -1,6 +1,5 @@
 import logging
-from jinja2 import Environment, FileSystemLoader
-from src.database import get_session, Finding, Evidence
+from src.database import get_session, Finding
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

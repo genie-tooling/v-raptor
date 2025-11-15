@@ -16,7 +16,7 @@ services:
       - redis
     environment:
       - REDIS_HOST=localhost
-    command: ["python3", "run_web.py"]
+    command: ["uv", "run", "python3", "run_web.py"]
   worker:
     build: .
     network_mode: "host"
@@ -27,4 +27,4 @@ services:
       - redis
     environment:
       - REDIS_HOST=localhost
-    command: ["python3", "-m", "src.worker"]
+    command: ["uv", "run", "python3", "-m", "src.worker"]

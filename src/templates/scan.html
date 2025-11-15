@@ -32,17 +32,71 @@
 <div class="card border-secondary">
     <div class="card-header">Findings</div>
     <div class="card-body">
+        <form id="filter-form" method="get" class="row g-3 align-items-center mb-3">
+            <div class="col-md-3">
+                <label for="severity" class="form-label">Severity</label>
+                <select name="severity" id="severity" class="form-select">
+                    <option value="">All</option>
+                    <option value="CRITICAL" {% if severity_filter == 'CRITICAL' %}selected{% endif %}>Critical</option>
+                    <option value="HIGH" {% if severity_filter == 'HIGH' %}selected{% endif %}>High</option>
+                    <option value="MEDIUM" {% if severity_filter == 'MEDIUM' %}selected{% endif %}>Medium</option>
+                    <option value="LOW" {% if severity_filter == 'LOW' %}selected{% endif %}>Low</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="scanner" class="form-label">Scanner</label>
+                <select name="scanner" id="scanner" class="form-select">
+                    <option value="">All</option>
+                    <option value="Semgrep" {% if scanner_filter == 'Semgrep' %}selected{% endif %}>Semgrep</option>
+                    <option value="Bandit" {% if scanner_filter == 'Bandit' %}selected{% endif %}>Bandit</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="keyword" class="form-label">Keyword</label>
+                <input type="text" name="keyword" id="keyword" class="form-control" value="{{ keyword or '' }}">
+            </div>
+        </form>
+
+        <div class="mb-3">
+            {% if severity_filter %}
+                <span class="badge bg-primary">
+                    Severity: {{ severity_filter }}
+                    <a href="{{ url_for('scan', scan_id=scan.id, scanner=scanner_filter, keyword=keyword, sort_by=sort_by, sort_order=sort_order) }}" class="text-white text-decoration-none">&times;</a>
+                </span>
+            {% endif %}
+            {% if scanner_filter %}
+                <span class="badge bg-info">
+                    Scanner: {{ scanner_filter }}
+                    <a href="{{ url_for('scan', scan_id=scan.id, severity=severity_filter, keyword=keyword, sort_by=sort_by, sort_order=sort_order) }}" class="text-white text-decoration-none">&times;</a>
+                </span>
+            {% endif %}
+        </div>
+
         <table class="table table-hover">
             <thead>
                 <tr>
                     <th scope="col">Description</th>
-                    <th scope="col">File</th>
+                    <th scope="col">
+                        <a href="{{ url_for('scan', scan_id=scan.id, severity=severity_filter, scanner=scanner_filter, keyword=keyword, sort_by='file', sort_order='asc' if sort_by == 'file' and sort_order == 'desc' else 'desc') }}">
+                            File
+                            {% if sort_by == 'file' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
                     <th scope="col">Line</th>
-                    <th scope="col">Severity</th>
+                    <th scope="col">
+                        <a href="{{ url_for('scan', scan_id=scan.id, severity=severity_filter, scanner=scanner_filter, keyword=keyword, sort_by='severity', sort_order='asc' if sort_by == 'severity' and sort_order == 'desc' else 'desc') }}">
+                            Severity
+                            {% if sort_by == 'severity' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
                 </tr>
             </thead>
             <tbody>
-                {% for finding in scan.findings %}
+                {% for finding in findings %}
                 <tr>
                     <td><a href="/finding/{{ finding.id }}">{{ finding.description }}</a></td>
                     <td>{{ finding.file_path }}</td>
@@ -79,6 +133,39 @@
                 location.reload();
             }, 5000);
         }
+
+        document.getElementById('severity').addEventListener('change', function() {
+            document.getElementById('filter-form').submit();
+        });
+
+        document.getElementById('scanner').addEventListener('change', function() {
+            document.getElementById('filter-form').submit();
+        });
+
+        const keywordInput = document.getElementById('keyword');
+        const findingsTable = document.querySelector('.table tbody');
+        const rows = findingsTable.getElementsByTagName('tr');
+
+        keywordInput.addEventListener('input', function() {
+            const keyword = keywordInput.value.toLowerCase();
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                const description = row.cells[0].textContent.toLowerCase();
+                const file = row.cells[1].textContent.toLowerCase();
+                if (description.includes(keyword) || file.includes(keyword)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            }
+        });
+
+        document.querySelectorAll('.badge a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                window.location.href = this.href;
+            });
+        });
     });
 </script>
 {% endblock %}

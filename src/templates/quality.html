@@ -12,13 +12,62 @@
         <table class="table table-hover">
             <thead>
                 <tr>
-                    <th scope="col">File Path</th>
-                    <th scope="col">Cyclomatic Complexity</th>
-                    <th scope="col">Code Churn</th>
-                    <th scope="col">SLOC</th>
-                    <th scope="col">LLOC</th>
-                    <th scope="col">Comments</th>
-                    <th scope="col">Halstead Volume</th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='file_path', sort_order='asc' if sort_by == 'file_path' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='file_path', sort_order='asc' if sort_by == 'file_path' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            File Path
+                            {% if sort_by == 'file_path' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='cyclomatic_complexity', sort_order='asc' if sort_by == 'cyclomatic_complexity' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='cyclomatic_complexity', sort_order='asc' if sort_by == 'cyclomatic_complexity' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            Cyclomatic Complexity
+                            {% if sort_by == 'cyclomatic_complexity' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='code_churn', sort_order='asc' if sort_by == 'code_churn' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='code_churn', sort_order='asc' if sort_by == 'code_churn' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            Code Churn
+                            {% if sort_by == 'code_churn' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='sloc', sort_order='asc' if sort_by == 'sloc' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='sloc', sort_order='asc' if sort_by == 'sloc' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            SLOC
+                            {% if sort_by == 'sloc' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='lloc', sort_order='asc' if sort_by == 'lloc' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='lloc', sort_order='asc' if sort_by == 'lloc' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            LLOC
+                            {% if sort_by == 'lloc' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='comments', sort_order='asc' if sort_by == 'comments' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='comments', sort_order='asc' if sort_by == 'comments' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            Comments
+                            {% if sort_by == 'comments' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='halstead_volume', sort_order='asc' if sort_by == 'halstead_volume' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='halstead_volume', sort_order='asc' if sort_by == 'halstead_volume' and sort_order == 'desc' else 'desc') }}{% endif %}">
+                            Halstead Volume
+                            {% if sort_by == 'halstead_volume' %}
+                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                            {% endif %}
+                        </a>
+                    </th>
                     <th scope="col">Actions</th>
                 </tr>
             </thead>
@@ -33,7 +82,10 @@
                     <td>{{ metric.comments }}</td>
                     <td>{{ metric.halstead_volume }}</td>
                     <td>
-                        <button class="btn btn-primary btn-sm" onclick="getInterpretation({{ metric.id }})">Get Interpretation</button>
+                        <a href="{{ url_for('interpret_quality_metrics', metric_id=metric.id) }}" class="btn btn-primary btn-sm" onclick="showLoading(this)">
+                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            Get Interpretation
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -42,30 +94,10 @@
     </div>
 </div>
 
-<!-- Modal -->
-<div class="modal fade" id="interpretationModal" tabindex="-1" aria-labelledby="interpretationModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="interpretationModalLabel">Interpretation</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p id="interpretationText"></p>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
-function getInterpretation(metricId) {
-    fetch('/interpret_quality_metrics/' + metricId)
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('interpretationText').innerText = data.interpretation;
-            var myModal = new bootstrap.Modal(document.getElementById('interpretationModal'), {});
-            myModal.show();
-        });
+function showLoading(element) {
+    element.querySelector('.spinner-border').classList.remove('d-none');
+    element.setAttribute('disabled', 'disabled');
 }
 </script>
 {% endblock %}

@@ -1,35 +1,42 @@
 import os
 import json
 import logging
-import subprocess
-from sqlalchemy import func
-
-from .database import Repository, Scan, Finding, Patch, ChatMessage, Evidence, QualityMetric, ScanStatus
+from .database import Repository, Scan, ScanStatus
 from .sandbox import SandboxService
 from .llm import LLMService
-from .dependency_scanner import scan_dependencies
-from .config_scanner import find_config_files, scan_configuration
-from .secret_scanner import scan_for_secrets
-from .quality_scanner import get_quality_metrics
-from . import config
+from .vulnerability_processor import VulnerabilityProcessor
+from .scanner import Scanner
+from .cve_linker import CveLinker
+from .dashboard import Dashboard
+from .chat_service import ChatService
 
 
 class Orchestrator:
-    def __init__(self, vcs_service, db_session, google_web_search):
+    VERSION = "1.1"
+    def __init__(self, vcs_service, db_session, google_web_search, llm_service=None):
+        logging.info(f"--- Orchestrator class reloaded (version: {self.VERSION}) ---")
         self.vcs_service = vcs_service
-        try:
-            # Add logging around the potentially failing part
-            logging.info("Orchestrator: Initializing LLMService...")
-            self.llm_service = LLMService()
-            logging.info("Orchestrator: LLMService initialized successfully.")
-        except Exception as e:
-            logging.error(f"Orchestrator: Failed to initialize LLMService: {e}", exc_info=True)
-            # Re-raise the exception so the calling function knows something went wrong
-            raise e
+        if llm_service:
+            self.llm_service = llm_service
+        else:
+            try:
+                # Add logging around the potentially failing part
+                logging.info("Orchestrator: Initializing LLMService...")
+                self.llm_service = LLMService()
+                logging.info("Orchestrator: LLMService initialized successfully.")
+            except Exception as e:
+                logging.error(f"Orchestrator: Failed to initialize LLMService: {e}", exc_info=True)
+                # Re-raise the exception so the calling function knows something went wrong
+                raise e
             
         self.sandbox_service = SandboxService()
         self.db_session = db_session
         self.google_web_search = google_web_search
+        self.vulnerability_processor = VulnerabilityProcessor(db_session, self.llm_service, self.sandbox_service, self.vcs_service, self.google_web_search)
+        self.scanner = Scanner(db_session, self.llm_service, self.vulnerability_processor)
+        self.cve_linker = CveLinker(db_session, self.llm_service)
+        self.dashboard = Dashboard(db_session)
+        self.chat_service = ChatService(db_session, self.llm_service)
 
     def run_analysis_on_commit(self, repo_url, commit_hash, repo_id, auto_patch=False, wait_for_completion=False):
         """Runs the analysis on a commit."""
@@ -75,7 +82,7 @@ class Orchestrator:
                 return
 
             for vulnerability in vulnerabilities:
-                self.process_vulnerability(vulnerability, local_path, repo_url, scan, auto_patch=auto_patch)
+                self.vulnerability_processor.process_vulnerability(vulnerability, local_path, repo_url, scan, auto_patch=auto_patch)
 
             scan.status = ScanStatus.COMPLETED
             self.db_session.commit()
@@ -84,334 +91,58 @@ class Orchestrator:
             self.db_session.commit()
             logging.info(f"Error during analysis of commit {commit_hash}: {e}")
 
-    def validate_vulnerability_with_search(self, vulnerability):
-        """Validates a vulnerability by searching for it on the web."""
-        if not self.google_web_search:
-            logging.info("--- Web search validation skipped: search function not provided. ---")
-            return True
-        logging.info(f"\n--- Validating Vulnerability: {vulnerability['description']} ---")
-        search_query = f"{vulnerability['description']} {vulnerability['code_snippet']}"
-        search_results = self.google_web_search(query=search_query)
-
-        if not search_results:
-            return True # If search fails, proceed with the vulnerability
-
-        response_text = self.llm_service.validate_vulnerability(vulnerability['description'], search_results)
-        try:
-            data = json.loads(response_text)
-            if data.get("false_positive"):
-                logging.info("Vulnerability identified as a false positive.")
-                return False
-        except json.JSONDecodeError:
-            logging.info("Error: Could not decode LLM response as JSON.")
-        
-        return True
-
-    def process_vulnerability(self, vulnerability, local_path, repo_url, scan, auto_patch=False):
-        if not self.validate_vulnerability_with_search(vulnerability):
-            return
-
-        logging.info(f"\n+++ Potential Vulnerability Found: {vulnerability['description']} +++")
-        logging.info(f"File: {vulnerability['file_path']}, Line: {vulnerability['line_number']}")
-
-        finding = Finding(
-            scan_id=scan.id,
-            file_path=vulnerability['file_path'],
-            line_number=vulnerability['line_number'],
-            code_snippet=vulnerability['code_snippet'],
-            description=vulnerability['description'],
-        )
-        self.db_session.add(finding)
-        self.db_session.commit()
-
-        analysis = self.llm_service.get_root_cause_analysis(
-            vulnerability['code_snippet'], vulnerability['description']
-        )
-        logging.info("\n--- Root Cause Analysis ---")
-        logging.info(analysis)
-
-        evidence_analysis = Evidence(finding_id=finding.id, type='root_cause_analysis', content=analysis)
-        self.db_session.add(evidence_analysis)
-        self.db_session.commit()
-
-        test_script = self.llm_service.generate_test_script(
-            vulnerability['code_snippet'], vulnerability['description']
-        )
-        logging.info("\n--- Generated Test Script ---")
-        logging.info(test_script)
-
-        evidence_test_script = Evidence(finding_id=finding.id, type='test_script', content=test_script)
-        self.db_session.add(evidence_test_script)
-        self.db_session.commit()
-
-        container_id = self.sandbox_service.create_sandbox()
-        if not container_id:
-            return
-
-        try:
-            output = self.sandbox_service.execute_python_script(container_id, test_script)
-            logging.info("\n--- Test Script Output ---")
-            logging.info(output)
-
-            evidence_test_output = Evidence(finding_id=finding.id, type='test_output', content=output)
-            self.db_session.add(evidence_test_output)
-            self.db_session.commit()
-
-            confidence_score = self.llm_service.interpret_results(analysis, test_script, output)
-            logging.info(f"\nConfidence Score: {confidence_score}")
-            finding.confidence_score = confidence_score
-            self.db_session.commit()
-
-
-            if auto_patch and confidence_score > 0.7:
-                logging.info("\nHigh confidence score. Generating patch...")
-                patch_diff = self.llm_service.generate_patch(vulnerability['code_snippet'], analysis)
-                logging.info("\n--- Generated Patch ---")
-                logging.info(patch_diff)
-
-                if patch_diff:
-                    patch = Patch(finding_id=finding.id, generated_patch_diff=patch_diff)
-                    self.db_session.add(patch)
-                    self.db_session.commit()
-
-                    self.vcs_service.create_pull_request(
-                        repo_path=local_path,
-                        repo_url=repo_url,
-                        branch_name=f'v-raptor-fix/{os.path.basename(vulnerability["file_path"]).replace(".","_")}-{vulnerability["line_number"]}',
-                        title=f'Fix: {vulnerability["description"]}',
-                        body=f"""### V-Raptor Analysis\n
-**Vulnerability:** {vulnerability['description']}\n
-**File:** `{vulnerability['file_path']}`\n
-**Line:** {vulnerability['line_number']}\n
-**Root Cause Analysis:**\n{analysis}\n
-This patch was automatically generated by V-Raptor based on a confidence score of {confidence_score:.2f}.""",
-                        patch_diff=patch_diff
-                    )
-                else:
-                    logging.info("Patch generation failed or returned empty.")
-            else:
-                logging.info("Confidence score is too low or auto_patch is disabled, skipping patch generation.")
-        finally:
-            self.sandbox_service.destroy_sandbox(container_id)
-
-    def rewrite_remediation(self, finding_id):
-        """Re-writes a remediation for a finding."""
-        finding = self.db_session.query(Finding).get(finding_id)
-        if not finding:
-            return
-
-        analysis_evidence = self.db_session.query(Evidence).filter_by(finding_id=finding.id, type='root_cause_analysis').first()
-        analysis = analysis_evidence.content if analysis_evidence else ''
-
-        patch_diff = self.llm_service.generate_patch(finding.code_snippet, analysis)
-        logging.info("\n--- Generated Patch ---")
-        logging.info(patch_diff)
-
-        if patch_diff:
-            patch = self.db_session.query(Patch).filter_by(finding_id=finding.id).first()
-            if not patch:
-                patch = Patch(finding_id=finding.id)
-                self.db_session.add(patch)
-            patch.generated_patch_diff = patch_diff
-            self.db_session.commit()
-
-    def recheck_finding(self, finding_id):
-        """Re-checks a finding by re-running the test script."""
-        finding = self.db_session.query(Finding).get(finding_id)
-        if not finding:
-            return
-
-        test_script_evidence = self.db_session.query(Evidence).filter_by(finding_id=finding.id, type='test_script').first()
-        if not test_script_evidence:
-            return
-
-        container_id = self.sandbox_service.create_sandbox()
-        if not container_id:
-            return
-
-        try:
-            output = self.sandbox_service.execute_python_script(container_id, test_script_evidence.content)
-            logging.info("\n--- Test Script Output ---")
-            logging.info(output)
-
-            evidence_test_output = self.db_session.query(Evidence).filter_by(finding_id=finding.id, type='test_output').first()
-            if not evidence_test_output:
-                evidence_test_output = Evidence(finding_id=finding.id, type='test_output')
-                self.db_session.add(evidence_test_output)
-            evidence_test_output.content = output
-            self.db_session.commit()
-
-            analysis_evidence = self.db_session.query(Evidence).filter_by(finding_id=finding.id, type='root_cause_analysis').first()
-            analysis = analysis_evidence.content if analysis_evidence else ''
-
-            confidence_score = self.llm_service.interpret_results(analysis, test_script_evidence.content, output)
-            logging.info(f"\nConfidence Score: {confidence_score}")
-            finding.confidence_score = confidence_score
-            self.db_session.commit()
-        finally:
-            self.sandbox_service.destroy_sandbox(container_id)
-
-    def run_sast_scan(self, repo_path, scan):
-        """Runs a SAST scan on a repository using semgrep and bandit."""
-        logging.info("\n--- Running SAST Scan ---")
-        scan.status_message = "Running SAST scan..."
-        self.db_session.commit()
-
-        # Run semgrep
-        try:
-            report_path = os.path.join(repo_path, 'semgrep-report.json')
-            command = [
-                config.SEMGREP_PATH,
-                'scan',
-                '--json',
-                '--output',
-                report_path,
-                repo_path
-            ]
-            subprocess.run(command, check=True, capture_output=True, text=True)
-            if os.path.exists(report_path):
-                with open(report_path, 'r') as f:
-                    report = json.load(f)
-                for result in report['results']:
-                    new_finding = Finding(
-                        scan_id=scan.id,
-                        file_path=result['path'],
-                        line_number=result['start']['line'],
-                        code_snippet=result['extra']['lines'],
-                        description=f"Semgrep: {result['extra']['message']}",
-                        severity=result['extra']['severity'],
-                    )
-                    self.db_session.add(new_finding)
-                self.db_session.commit()
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Semgrep scan failed: {e.stderr}")
-        except Exception as e:
-            logging.error(f"An error occurred during Semgrep scan: {e}")
-
-        # Run bandit
-        try:
-            report_path = os.path.join(repo_path, 'bandit-report.json')
-            command = [
-                config.BANDIT_PATH,
-                '-r',
-                repo_path,
-                '-f',
-                'json',
-                '-o',
-                report_path
-            ]
-            result = subprocess.run(command, capture_output=True, text=True)
-            if result.returncode not in [0, 1]:
-                logging.error(f"Bandit scan failed with exit code {result.returncode}")
-                logging.error(f"Bandit stdout: {result.stdout}")
-                logging.error(f"Bandit stderr: {result.stderr}")
-                return
-
-            if os.path.exists(report_path):
-                with open(report_path, 'r') as f:
-                    report = json.load(f)
-                for res in report['results']:
-                    new_finding = Finding(
-                        scan_id=scan.id,
-                        file_path=res['filename'],
-                        line_number=res['line_number'],
-                        code_snippet=res['code'],
-                        description=f"Bandit: {res['issue_text']}",
-                        severity=res['issue_severity'],
-                    )
-                    self.db_session.add(new_finding)
-                self.db_session.commit()
-        except Exception as e:
-            logging.error(f"An error occurred during Bandit scan: {e}")
-
-    def _get_project_technologies(self, repo_path):
-        """Identifies the technologies used in a project based on dependency files."""
-        technologies = []
-        
-        # Check for Python
-        if os.path.exists(os.path.join(repo_path, 'requirements.txt')):
-            technologies.append('python')
-            
-        # Check for JavaScript
-        if os.path.exists(os.path.join(repo_path, 'package.json')):
-            technologies.append('javascript')
-            
-        # Add more checks for other languages/frameworks as needed
-        
-        return technologies
-
-    def run_intelligent_cve_scan(self, repo_path, scan):
-        """Runs an intelligent CVE scan on a repository."""
-        logging.info("\n--- Running Intelligent CVE Scan ---")
-        scan.status_message = "Running intelligent CVE scan..."
-        self.db_session.commit()
-
-        technologies = self._get_project_technologies(repo_path)
-        logging.info(f"Identified technologies: {technologies}")
-
-        # 3. Search for CVEs for each technology
-        for tech in technologies:
-            cves = self.search_cves_for_technology(tech)
-            
-            # 4. Validate CVEs
-            for cve in cves:
-                is_relevant = self.llm_service.validate_cve(cve, technologies)
-                if is_relevant:
-                    # 5. Create findings
-                    self.create_cve_finding(scan, cve)
-
-    def search_cves_for_technology(self, technology):
-        """Searches for CVEs for a given technology."""
-        logging.info(f"Searching for CVEs for {technology}")
-        search_query = f"{technology} CVE"
-        search_results = self.google_web_search(query=search_query)
-        
-        return self.llm_service.extract_cves_from_search(technology, search_results)
-
-    def create_cve_finding(self, scan, cve):
-        """Creates a finding for a CVE."""
-        logging.info(f"Creating finding for CVE {cve['id']}")
-        new_finding = Finding(
-            scan_id=scan.id,
-            description=cve['description'],
-            cve_id=cve['id'],
-            severity='HIGH', # Or some other default
-        )
-        self.db_session.add(new_finding)
-        self.db_session.commit()
-
-    def run_deep_scan(self, repo_url, auto_patch=False):
+    def run_deep_scan(self, repo_url, scan_id, auto_patch=False):
         """Runs a deep scan on a repository."""
-        repository = self.db_session.query(Repository).filter_by(url=repo_url).first()
-        if not repository:
-            primary_branch = self.vcs_service.get_primary_branch(repo_url)
-            repository = Repository(name=repo_url.split('/')[-1], url=repo_url, primary_branch=primary_branch)
-            self.db_session.add(repository)
-            self.db_session.commit()
+        scan = self.db_session.query(Scan).get(scan_id)
+        if not scan:
+            logging.error(f"Scan with id {scan_id} not found.")
+            return
 
-        scan = Scan(repository_id=repository.id, scan_type='deep', status='queued', auto_patch_enabled=auto_patch)
-        self.db_session.add(scan)
-        self.db_session.commit()
-
+        repository = scan.repository
+        
         scan.status = ScanStatus.RUNNING
         self.db_session.commit()
         try:
             scan.status_message = "Cloning repository..."
             self.db_session.commit()
             local_path = self.vcs_service.clone_repo(repo_url, branch=repository.primary_branch)
-            self.run_sast_scan(local_path, scan)
-            self.run_intelligent_cve_scan(local_path, scan)
-            self.run_source_code_scan(local_path, scan, auto_patch=auto_patch)
-            self.run_secret_scan(local_path, scan)
-            self.run_dependency_scan(local_path, scan)
-            self.run_config_scan(local_path, scan)
-            self.run_quality_scan(local_path, scan)
+            
+            logging.info("Starting SAST scan...")
+            self.scanner.run_sast_scan(local_path, scan)
+            logging.info("SAST scan finished.")
+
+            logging.info("Starting intelligent CVE scan...")
+            self.scanner.run_intelligent_cve_scan(local_path, scan)
+            logging.info("Intelligent CVE scan finished.")
+
+            logging.info("Starting source code scan...")
+            self.scanner.run_source_code_scan(scan, local_path, auto_patch=auto_patch)
+            logging.info("Source code scan finished.")
+
+            logging.info("Starting secret scan...")
+            self.scanner.run_secret_scan(local_path, scan)
+            logging.info("Secret scan finished.")
+
+            logging.info("Starting dependency scan...")
+            self.scanner.run_dependency_scan(local_path, scan)
+            logging.info("Dependency scan finished.")
+
+            logging.info("Starting config scan...")
+            self.scanner.run_config_scan(local_path, scan)
+            logging.info("Config scan finished.")
+
+            logging.info("Starting quality scan...")
+            self.scanner.run_quality_scan(local_path, scan)
+            logging.info("Quality scan finished.")
+
             scan.status = ScanStatus.COMPLETED
+            scan.status_message = "Completed"
             self.db_session.commit()
         except Exception as e:
             scan.status = ScanStatus.FAILED
+            scan.status_message = f"Error during deep scan: {e}"
             self.db_session.commit()
-            logging.info(f"Error during deep scan of {repo_url}: {e}")
+            logging.error(f"Error during deep scan of {repo_url}: {e}", exc_info=True)
 
     def run_local_scan(self, repo_path, auto_patch=False):
         """Runs a deep scan on a local repository."""
@@ -434,13 +165,13 @@ This patch was automatically generated by V-Raptor based on a confidence score o
             scan.status_message = "Starting local scan..."
             self.db_session.commit()
             # For a local scan, the repo_path is the local_path. No need to clone.
-            self.run_sast_scan(repo_path, scan)
-            self.run_intelligent_cve_scan(repo_path, scan)
-            self.run_source_code_scan(repo_path, scan, auto_patch=auto_patch)
-            self.run_secret_scan(repo_path, scan)
-            self.run_dependency_scan(repo_path, scan)
-            self.run_config_scan(repo_path, scan)
-            self.run_quality_scan(repo_path, scan)
+            self.scanner.run_sast_scan(repo_path, scan)
+            self.scanner.run_intelligent_cve_scan(repo_path, scan)
+            self.scanner.run_source_code_scan(repo_path, scan, auto_patch=auto_patch)
+            self.scanner.run_secret_scan(repo_path, scan)
+            self.scanner.run_dependency_scan(repo_path, scan)
+            self.scanner.run_config_scan(repo_path, scan)
+            self.scanner.run_quality_scan(repo_path, scan)
             scan.status = ScanStatus.COMPLETED
             self.db_session.commit()
         except Exception as e:
@@ -448,92 +179,6 @@ This patch was automatically generated by V-Raptor based on a confidence score o
             self.db_session.commit()
             logging.info(f"Error during local scan of {repo_path}: {e}")
 
-    def run_source_code_scan(self, scan, repo_path, auto_patch=False):
-        scan.status_message = f"Scanning source code..."
-        self.db_session.commit()
-        
-        ignorable_files = ['.gitignore']
-        ignorable_extensions = ['.db', '.sqlite3', '.log', '.pyc', '.egg-info', '.DS_Store']
-        ignorable_dirs = ['__pycache__', '.git', '.venv', '.venv2', 'node_modules', 'build', 'dist']
-
-        for root, dirs, files in os.walk(repo_path):
-            # Remove ignorable directories from the list of directories to traverse
-            dirs[:] = [d for d in dirs if d not in ignorable_dirs]
-
-            for file in files:
-                file_path = os.path.join(root, file)
-
-                if os.path.basename(file_path) in ignorable_files:
-                    continue
-                
-                if any(file_path.endswith(ext) for ext in ignorable_extensions):
-                    continue
-
-                scan.status_message = f"Scanning {file_path}..."
-                self.db_session.commit()
-                
-                try:
-                    response = self.llm_service.analyze_file(file_path)
-                    vulnerabilities = json.loads(response).get('vulnerabilities', [])
-                    for vuln in vulnerabilities:
-                        confidence = vuln.get('confidence', 0.0)
-                        if confidence >= 0.7:
-                            finding = Finding(
-                                scan_id=scan.id,
-                                file_path=vuln['file_path'],
-                                line_number=vuln['line_number'],
-                                description=vuln['description'],
-                                code_snippet=vuln['code_snippet'],
-                                confidence_score=confidence,
-                                status='unverified'
-                            )
-                            self.db_session.add(finding)
-                except Exception as e:
-                    print(f"Error analyzing file {file_path}: {e}")
-        self.db_session.commit()
-
-    def run_secret_scan(self, repo_path, scan):
-        """Runs a secret scan on a repository using gitleaks."""
-        logging.info("\n--- Running Secret Scan with Gitleaks ---")
-        scan.status_message = "Running secret scan..."
-        self.db_session.commit()
-
-        report_path = os.path.join(repo_path, 'gitleaks-report.json')
-        command = [
-            config.GITLEAKS_PATH,
-            'detect',
-            '--source',
-            repo_path,
-            '--report-path',
-            report_path,
-            '--report-format',
-            'json'
-        ]
-
-        try:
-            subprocess.run(command, check=True, capture_output=True, text=True)
-            
-            if os.path.exists(report_path):
-                with open(report_path, 'r') as f:
-                    findings = json.load(f)
-                
-                for finding in findings:
-                    new_finding = Finding(
-                        scan_id=scan.id,
-                        file_path=finding['File'],
-                        line_number=finding['StartLine'],
-                        code_snippet=finding['Secret'],
-                        description=f"Gitleaks: {finding['Description']}",
-                        severity=finding.get('Severity', 'HIGH'),
-                    )
-                    self.db_session.add(new_finding)
-                self.db_session.commit()
-
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Gitleaks scan failed: {e.stderr}")
-        except Exception as e:
-            logging.error(f"An error occurred during secret scan: {e}")
-        
     def run_quality_scan_for_repo(self, repo_id):
         """Runs a quality scan on a repository."""
         repository = self.db_session.query(Repository).get(repo_id)
@@ -548,7 +193,7 @@ This patch was automatically generated by V-Raptor based on a confidence score o
         self.db_session.commit()
         try:
             local_path = self.vcs_service.clone_repo(repository.url, branch=repository.primary_branch)
-            self.run_quality_scan(local_path, scan)
+            self.scanner.run_quality_scan(local_path, scan)
             scan.status = ScanStatus.COMPLETED
             self.db_session.commit()
         except Exception as e:
@@ -556,232 +201,35 @@ This patch was automatically generated by V-Raptor based on a confidence score o
             self.db_session.commit()
             logging.info(f"Error during quality scan of repo {repo_id}: {e}")
 
-    def run_quality_scan(self, repo_path, scan):
-        """Runs a quality scan on a repository."""
-        logging.info("\n--- Running Quality Scan ---")
-        scan.status_message = "Running quality scan..."
-        self.db_session.commit()
-        logging.info(f"Scanning for .py files in {repo_path}")
+    def rewrite_remediation(self, finding_id):
+        """Re-writes a remediation for a finding."""
+        return self.vulnerability_processor.rewrite_remediation(finding_id)
 
-        found_files = False
-        for root, _, files in os.walk(repo_path):
-            logging.info(f"Scanning directory: {root}")
-            for file in files:
-                logging.info(f"Found file: {file}")
-                if file.endswith('.py'):
-                    found_files = True
-                    logging.info(f"Found python file: {file}")
-                    absolute_file_path = os.path.join(root, file)
-                    
-                    metrics = get_quality_metrics(absolute_file_path, repo_path)
-                    if metrics:
-                        quality_metric = QualityMetric(
-                            scan_id=scan.id,
-                            file_path=absolute_file_path,
-                            cyclomatic_complexity=metrics['cyclomatic_complexity'],
-                            sloc=metrics['sloc'],
-                            lloc=metrics['lloc'],
-                            comments=metrics['comments'],
-                            halstead_volume=metrics['halstead_volume'],
-                            code_churn=metrics['code_churn']
-                        )
-                        self.db_session.add(quality_metric)
-                        self.db_session.commit()
-                        logging.info(f"Added and committed quality metric for file: {absolute_file_path}")
-                        logging.info(f"Metric: {quality_metric}")
-        
-        if not found_files:
-            logging.info("No .py files found in the repository.")
-
-    def run_dependency_scan(self, repo_path, scan):
-        """Runs a dependency scan on a repository."""
-        logging.info("\n--- Running Dependency Scan ---")
-        scan.status_message = "Running dependency scan..."
-        self.db_session.commit()
-
-        vulnerabilities = scan_dependencies(repo_path)
-        if vulnerabilities:
-            logging.info(f"Found {len(vulnerabilities)} vulnerabilities in dependencies:")
-            for vuln in vulnerabilities:
-                cve_id = self.search_for_cve(vuln['package'], vuln['version'])
-                finding = Finding(
-                    scan_id=scan.id,
-                    description=vuln['summary'],
-                    severity=vuln.get('severity', 'UNKNOWN'),
-                    cve_id=cve_id,
-                    # Other fields like file_path and line_number might not be applicable for dependency scans
-                )
-                self.db_session.add(finding)
-                logging.info(f"  - ID: {vuln['id']}")
-                logging.info(f"    Package: {vuln['package']}")
-                logging.info(f"    Summary: {vuln['summary']}")
-                if cve_id:
-                    logging.info(f"    CVE: {cve_id}")
-            
-            # Automatically remediate vulnerabilities
-            logging.info("\n--- Automatically Remediating Dependencies ---")
-            try:
-                subprocess.run(["osv-scanner", "fix", repo_path], check=True)
-                logging.info("Dependencies remediated successfully.")
-
-                # Create a pull request with the changes
-                self.vcs_service.create_pull_request(
-                    repo_path=repo_path,
-                    repo_url=scan.repository.url,
-                    branch_name='v-raptor-remediate-dependencies',
-                    title='Fix: Remediate dependency vulnerabilities',
-                    body='This pull request was automatically generated by V-Raptor to remediate dependency vulnerabilities.',
-                    patch_diff=self.vcs_service.get_commit_diff(repo_path, 'HEAD')
-                )
-
-            except subprocess.CalledProcessError as e:
-                logging.info(f"Error running OSV-Scanner fix: {e}")
-                logging.info(f"Stderr: {e.stderr}")
-
-        else:
-            logging.info("No dependency vulnerabilities found.")
-
-    def run_config_scan(self, repo_path, scan):
-        """Runs a configuration scan on a repository."""
-        logging.info("\n--- Running Configuration Scan ---")
-        scan.status_message = "Running configuration scan..."
-        self.db_session.commit()
-
-        config_files = find_config_files(repo_path)
-        if not config_files:
-            logging.info("No configuration files found.")
-            return
-
-        total_misconfigs = 0
-        for file_path in config_files:
-            misconfigs = scan_configuration(file_path, self.llm_service)
-            if misconfigs:
-                total_misconfigs += len(misconfigs)
-                logging.info(f"Found {len(misconfigs)} misconfigurations in {file_path}:")
-                for misconfig in misconfigs:
-                    finding = Finding(
-                        scan_id=scan.id,
-                        file_path=file_path,
-                        line_number=misconfig.get('line_number'),
-                        description=misconfig.get('description'),
-                    )
-                    self.db_session.add(finding)
-                    logging.info(f"  - Line: {misconfig.get('line_number')}, Description: {misconfig.get('description')}")
-        
-        if total_misconfigs == 0:
-            logging.info("No configuration misconfigurations found.")
+    def recheck_finding(self, finding_id):
+        """Re-checks a finding by re-running the test script."""
+        return self.vulnerability_processor.recheck_finding(finding_id)
 
     def link_cves_to_findings(self, repo_id, scan_id):
         """Runs a CVE scan on a repository."""
-        scan = self.db_session.query(Scan).get(scan_id)
-        if not scan:
-            return
-
-        scan.status = ScanStatus.RUNNING
-        self.db_session.commit()
-        try:
-            findings = self.db_session.query(Finding).join(Scan).filter(Scan.repository_id == repo_id, Finding.cve_id == None).all()
-            for finding in findings:
-                self.search_cve_for_finding(finding)
-            scan.status = ScanStatus.COMPLETED
-            self.db_session.commit()
-        except Exception as e:
-            scan.status = ScanStatus.FAILED
-            self.db_session.commit()
-            logging.info(f"Error during CVE scan of repo {repo_id}: {e}")
-
-    def search_cve_for_finding(self, finding):
-        """Searches for a CVE for a given finding."""
-        search_query = f"{finding.description} CVE"
-        search_results = self.google_web_search(query=search_query)
-        
-        prompt = f"""Based on the following search results, what is the most likely CVE for the vulnerability '{finding.description}'?
-
-Search results:
-{search_results}
-
-Respond with a JSON object containing the CVE ID and severity. The severity should be one of 'LOW', 'MEDIUM', 'HIGH', or 'CRITICAL'.
-
-Example response:
-```json
-{{
-  "cve_id": "CVE-2021-44228",
-  "severity": "CRITICAL"
-}}
-```
-
-If no CVE is found, respond with an empty JSON object: {{}}.
-"""
-        response = self.llm_service._create_chat_completion(self.llm_service.scanner_client, self.llm_service._get_model_name('scanner'), prompt, is_json=True)
-        
-        try:
-            data = json.loads(response)
-            cve_id = data.get('cve_id')
-            severity = data.get('severity')
-
-            if cve_id:
-                finding.cve_id = cve_id
-                finding.severity = severity
-                self.db_session.commit()
-                logging.info(f"Found CVE: {cve_id} with severity {severity} for finding #{finding.id}")
-        except json.JSONDecodeError:
-            logging.info("Error: Could not decode LLM response as JSON.")
+        return self.cve_linker.link_cves_to_findings(repo_id, scan_id)
 
     def get_findings_by_severity(self):
         """Gets the number of findings for each severity."""
-        return self.db_session.query(Finding.severity, func.count(Finding.id)).group_by(Finding.severity).all()
+        return self.dashboard.get_findings_by_severity()
 
     def get_findings_by_repo(self):
         """Gets the number of findings for each repository."""
-        return self.db_session.query(Repository.name, func.count(Finding.id)).select_from(Repository).join(Scan).join(Finding).group_by(Repository.name).all()
+        return self.dashboard.get_findings_by_repo()
 
     def get_dashboard_metrics(self):
         """Gets metrics for the dashboard."""
-        total_repos = self.db_session.query(Repository).count()
-        total_scans = self.db_session.query(Scan).count()
-        total_findings = self.db_session.query(Finding).count()
-
-        return {
-            'total_repos': total_repos,
-            'total_scans': total_scans,
-            'total_findings': total_findings
-        }
+        return self.dashboard.get_dashboard_metrics()
 
     def chat_with_finding(self, finding_id, message):
         """Chats with a finding."""
-        finding = self.db_session.query(Finding).get(finding_id)
-        if not finding:
-            return "Finding not found."
+        return self.chat_service.chat_with_finding(finding_id, message)
 
-        # Store user message
-        user_message = ChatMessage(finding_id=finding_id, message=message, sender='user')
-        self.db_session.add(user_message)
-        self.db_session.commit()
+    def chat_with_quality_interpretation(self, interpretation_id, message):
+        """Chats with a quality interpretation."""
+        return self.chat_service.chat_with_quality_interpretation(interpretation_id, message)
 
-        history = self.db_session.query(ChatMessage).filter_by(finding_id=finding_id).order_by(ChatMessage.created_at).all()
-
-        prompt = f"""You are a senior security engineer. You are chatting with a developer about the following vulnerability:
-
-Description: {finding.description}
-File: {finding.file_path}
-Line: {finding.line_number}
-Code Snippet:
-```
-{finding.code_snippet}
-```
-
-Here is the chat history:
-"""
-        for msg in history:
-            prompt += f"{msg.sender}: {msg.message}\n"
-
-        prompt += "\nProvide a concise and helpful response to the last message from the user. Do not ask any questions."
-
-        response = self.llm_service._create_chat_completion(prompt, is_json=False)
-
-        # Store assistant message
-        assistant_message = ChatMessage(finding_id=finding_id, message=response, sender='assistant')
-        self.db_session.add(assistant_message)
-        self.db_session.commit()
-
-        return response

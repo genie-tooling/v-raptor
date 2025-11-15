@@ -20,7 +20,12 @@
                 {% for finding in findings %}
                 <tr>
                     <td><a href="/finding/{{ finding.id }}">#{{ finding.id }}</a></td>
-                    <td>{{ finding.description }}</td>
+                    <td>
+                        {{ finding.description_text }}
+                        {% if finding.description_url %}
+                            <a href="{{ finding.description_url }}" target="_blank" rel="noopener noreferrer">[{{ finding.rule_id }}]</a>
+                        {% endif %}
+                    </td>
                     <td><a href="/repository/{{ finding.scan.repository.id }}">{{ finding.scan.repository.name }}</a></td>
                     <td>{{ finding.file_path }}</td>
                     <td>{{ finding.line_number }}</td>

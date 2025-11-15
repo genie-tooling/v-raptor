@@ -58,7 +58,7 @@ def _get_orchestrator():
         return None
 
 
-def run_deep_scan_job(repo_url, auto_patch=False):
+def run_deep_scan_job(repo_url, scan_id, auto_patch=False):
     """
     This is the background task that will be executed by the RQ worker.
     It runs a deep scan on a repository.
@@ -71,7 +71,7 @@ def run_deep_scan_job(repo_url, auto_patch=False):
         if not orchestrator:
             raise RuntimeError("Orchestrator could not be initialized. Check environment and configuration.")
         
-        orchestrator.run_deep_scan(repo_url, auto_patch=auto_patch)
+        orchestrator.run_deep_scan(repo_url, scan_id, auto_patch=auto_patch)
         logging.info(f"Deep scan job completed for repo: {repo_url}")
     except Exception as e:
         logging.error(f"Deep scan job failed for repo {repo_url}: {e}", exc_info=True)
@@ -172,7 +172,7 @@ def start_worker():
             logging.info(f"RQ Worker started. Listening on queues: {', '.join(listen)}")
             worker.work()
     except Exception as e:
-        logging.error("Worker crashed with an exception.", exc_info=True)
+        logging.error(f"Worker crashed with an exception {e}.", exc_info=True)
 
 if __name__ == '__main__':
     start_worker()

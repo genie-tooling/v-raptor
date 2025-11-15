@@ -63,12 +63,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <form action="/stop_scan/${scan.id}" method="post" style="display: inline;" class="ms-2">
                                     <button type="submit" class="btn btn-warning btn-sm">Stop</button>
                                 </form>
-                                <a href="/delete_scan/${scan.id}" class="btn btn-danger btn-sm" data-method="delete" onclick="return confirm('Are you sure you want to delete this scan? This action cannot be undone.');">Delete</a>
+                                <form action="/delete_scan/${scan.id}" method="post" style="display: inline;">
+                                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this scan? This action cannot be undone.');">Delete</button>
+                                </form>
                             `;
                         } else {
                             actionsCell.innerHTML = `
                                 <a href="/scan/${scan.id}" class="btn btn-primary btn-sm">View</a>
-                                <a href="/delete_scan/${scan.id}" class="btn btn-danger btn-sm" data-method="delete" onclick="return confirm('Are you sure you want to delete this scan? This action cannot be undone.');">Delete</a>
+                                <form action="/delete_scan/${scan.id}" method="post" style="display: inline;">
+                                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this scan? This action cannot be undone.');">Delete</button>
+                                </form>
                             `;
                         }
                     }
