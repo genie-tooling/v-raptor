@@ -38,6 +38,18 @@ class Orchestrator:
         self.dashboard = Dashboard(db_session)
         self.chat_service = ChatService(db_session, self.llm_service, self.vcs_service)
 
+    def _calculate_total_progress(self, local_path, include_tests=False):
+        """Calculates the total progress for a deep scan."""
+        total_progress = 0
+        total_progress += len(self.scanner.get_sast_files(local_path, include_tests))
+        total_progress += len(self.scanner.get_source_code_files(local_path, include_tests))
+        total_progress += len(self.scanner.get_secret_files(local_path))
+        total_progress += len(self.scanner.get_config_files(local_path))
+        total_progress += len(self.scanner.get_quality_files(local_path))
+        total_progress += 1 # for intelligent CVE scan
+        total_progress += 1 # for dependency scan
+        return total_progress
+
     def run_analysis_on_commit(self, repo_url, commit_hash, repo_id, auto_patch=False, wait_for_completion=False):
         """Runs the analysis on a commit."""
         scan = Scan(repository_id=repo_id, triggering_commit_hash=commit_hash, status='queued', auto_patch_enabled=auto_patch)
@@ -88,10 +100,11 @@ class Orchestrator:
             self.db_session.commit()
         except Exception as e:
             scan.status = ScanStatus.FAILED
+            scan.status_message = f"Error during analysis: {e}"
             self.db_session.commit()
             logging.info(f"Error during analysis of commit {commit_hash}: {e}")
 
-    def run_deep_scan(self, repo_url, scan_id, auto_patch=False, include_tests=False):
+    def run_deep_scan(self, repo_url, scan_id, auto_patch=False, include_tests=False, branch=None):
         """Runs a deep scan on a repository."""
         scan = self.db_session.query(Scan).get(scan_id)
         if not scan:
@@ -105,8 +118,12 @@ class Orchestrator:
         try:
             scan.status_message = "Cloning repository..."
             self.db_session.commit()
-            local_path = self.vcs_service.clone_repo(repo_url, branch=repository.primary_branch)
+            local_path = self.vcs_service.clone_repo(repo_url, branch=branch or repository.primary_branch)
             
+            # TODO: Add a database migration to add the progress and total_progress columns to the scan table
+            scan.total_progress = self._calculate_total_progress(local_path, include_tests)
+            self.db_session.commit()
+
             logging.info("Starting SAST scan...")
             self.scanner.run_sast_scan(local_path, scan, include_tests=include_tests)
             logging.info("SAST scan finished.")
@@ -176,18 +193,23 @@ class Orchestrator:
             self.db_session.commit()
         except Exception as e:
             scan.status = ScanStatus.FAILED
+            scan.status_message = f"Error during local scan: {e}"
             self.db_session.commit()
             logging.info(f"Error during local scan of {repo_path}: {e}")
 
-    def run_quality_scan_for_repo(self, repo_id):
-        """Runs a quality scan on a repository."""
-        repository = self.db_session.query(Repository).get(repo_id)
-        if not repository:
+    def run_quality_scan_for_repo(self, scan_id):
+        """Runs a quality scan on a repository for a given scan_id."""
+        scan = self.db_session.query(Scan).get(scan_id)
+        if not scan:
+            logging.error(f"Quality scan failed: Scan with id {scan_id} not found.")
             return
 
-        scan = Scan(repository_id=repo_id, scan_type='quality', status='queued')
-        self.db_session.add(scan)
-        self.db_session.commit()
+        repository = scan.repository
+        if not repository:
+            scan.status = ScanStatus.FAILED
+            scan.status_message = "Repository not found for this scan."
+            self.db_session.commit()
+            return
 
         scan.status = ScanStatus.RUNNING
         self.db_session.commit()
@@ -195,11 +217,13 @@ class Orchestrator:
             local_path = self.vcs_service.clone_repo(repository.url, branch=repository.primary_branch)
             self.scanner.run_quality_scan(local_path, scan)
             scan.status = ScanStatus.COMPLETED
+            # The scanner now sets the final status message
             self.db_session.commit()
         except Exception as e:
             scan.status = ScanStatus.FAILED
+            scan.status_message = f"Error during quality scan: {str(e)}"
             self.db_session.commit()
-            logging.info(f"Error during quality scan of repo {repo_id}: {e}")
+            logging.error(f"Error during quality scan of repo {repository.id}: {e}", exc_info=True)
 
     def rewrite_remediation(self, finding_id):
         """Re-writes a remediation for a finding."""
@@ -232,4 +256,3 @@ class Orchestrator:
     def chat_with_quality_interpretation(self, interpretation_id, message):
         """Chats with a quality interpretation."""
         return self.chat_service.chat_with_quality_interpretation(interpretation_id, message)
-

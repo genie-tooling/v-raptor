@@ -4,7 +4,7 @@ FROM ubuntu:24.04
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies, Python, Git, and other essentials
+# Install system dependencies, Python, Git, Java (for PMD), and other essentials
 RUN apt-get update && \
     apt-get install -y \
     build-essential \
@@ -13,13 +13,27 @@ RUN apt-get update && \
     python3-pip \
     pipx \
     git \
-    curl && \
+    curl \
+    openjdk-17-jdk \
+    unzip && \
     rm -rf /var/lib/apt/lists/*
 
-# Install security tools
+# Install PMD for code duplication analysis
+RUN PMD_VERSION=6.55.0 && \
+    curl -L -o pmd.zip "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-bin-${PMD_VERSION}.zip" && \
+    unzip pmd.zip && \
+    rm pmd.zip && \
+    mv pmd-bin-${PMD_VERSION} /opt/pmd
+
+# Add PMD to PATH
+ENV PATH="/opt/pmd/bin:$PATH"
+
+# Install security and quality tools
 # Python tools
 RUN pipx install semgrep && \
-    pipx install bandit
+    pipx install bandit && \
+    pipx install pylint && \
+    pipx install cohesion
 
 # Install gitleaks
 RUN GITLEAKS_VERSION=$(curl -s "https://api.github.com/repos/gitleaks/gitleaks/releases/latest" | grep -oP '"tag_name": "v\K[0-9.]+' | head -n 1) && \

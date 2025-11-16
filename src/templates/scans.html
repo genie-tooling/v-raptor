@@ -55,6 +55,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         
                         statusCell.innerHTML = `<span class="badge ${badgeClass}">${scan.status}</span>`;
+                        if (scan.status === 'running') {
+                            const percentage = scan.total_progress > 0 ? Math.round((scan.progress / scan.total_progress) * 100) : 0;
+                            statusCell.innerHTML += `
+                                <div class="progress mt-1" style="height: 15px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 
+                                         style="width: ${percentage}%;" 
+                                         aria-valuenow="${percentage}" 
+                                         aria-valuemin="0" aria-valuemax="100">
+                                        ${percentage}%
+                                    </div>
+                                </div>
+                            `;
+                        }
                         statusMessageCell.innerHTML = scan.status_message || '';
                         
                         if (scan.status === 'running') {

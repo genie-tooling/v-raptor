@@ -1,7 +1,7 @@
 from redis import Redis
 from src.orchestrator import Orchestrator
 from src.vcs import VCSService
-from src.database import get_session, Repository, Scan
+from src.database import get_session, Repository, Scan, ScanStatus
 from rq import Queue, Connection, Worker
 import os
 from src import di
@@ -57,8 +57,7 @@ def _get_orchestrator():
         logging.error(f"Failed to initialize orchestrator components: {e}", exc_info=True)
         return None
 
-
-def run_deep_scan_job(repo_url, scan_id, auto_patch=False, include_tests=False):
+def run_deep_scan_job(repo_url, scan_id, auto_patch=False, include_tests=False, branch=None):
     """
     This is the background task that will be executed by the RQ worker.
     It runs a deep scan on a repository.
@@ -71,7 +70,7 @@ def run_deep_scan_job(repo_url, scan_id, auto_patch=False, include_tests=False):
         if not orchestrator:
             raise RuntimeError("Orchestrator could not be initialized. Check environment and configuration.")
         
-        orchestrator.run_deep_scan(repo_url, scan_id, auto_patch=auto_patch, include_tests=include_tests)
+        orchestrator.run_deep_scan(repo_url, scan_id, auto_patch=auto_patch, include_tests=include_tests, branch=branch)
         logging.info(f"Deep scan job completed for repo: {repo_url}")
     except Exception as e:
         logging.error(f"Deep scan job failed for repo {repo_url}: {e}", exc_info=True)
@@ -79,22 +78,32 @@ def run_deep_scan_job(repo_url, scan_id, auto_patch=False, include_tests=False):
         if orchestrator and orchestrator.db_session:
             orchestrator.db_session.close()
 
-def run_quality_scan_job(repo_id):
+def run_quality_scan_job(scan_id):
     """
     This is the background task that will be executed by the RQ worker.
     It runs a quality scan on a repository.
     """
-    logging.info(f"Starting quality scan job for repo: {repo_id}")
+    logging.info(f"Starting quality scan job for scan: {scan_id}")
     orchestrator = None
     try:
         orchestrator = _get_orchestrator()
         if not orchestrator:
             raise RuntimeError("Orchestrator could not be initialized. Check environment and configuration.")
         
-        orchestrator.run_quality_scan_for_repo(repo_id)
-        logging.info(f"Quality scan job completed for repo: {repo_id}")
+        orchestrator.run_quality_scan_for_repo(scan_id)
+        logging.info(f"Quality scan job completed for scan: {scan_id}")
     except Exception as e:
-        logging.error(f"Quality scan job failed for repo {repo_id}: {e}", exc_info=True)
+        logging.error(f"Quality scan job failed for scan {scan_id}: {e}", exc_info=True)
+        # Fallback to ensure scan status is updated on catastrophic failure
+        session = get_session()()
+        try:
+            scan = session.query(Scan).get(scan_id)
+            if scan:
+                scan.status = ScanStatus.FAILED
+                scan.status_message = f"Worker failed: {e}"
+                session.commit()
+        finally:
+            session.close()
     finally:
         if orchestrator and orchestrator.db_session:
             orchestrator.db_session.close()

@@ -20,6 +20,14 @@
             <td class="status-cell">
                 {% if scan.status.value == 'running' %}
                     <span class="badge bg-info">Running...</span>
+                    <div class="progress mt-1" style="height: 15px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 
+                             style="width: {{ (scan.progress / scan.total_progress * 100) if scan.total_progress else 0 }}%;" 
+                             aria-valuenow="{{ (scan.progress / scan.total_progress * 100) if scan.total_progress else 0 }}" 
+                             aria-valuemin="0" aria-valuemax="100">
+                            {{ (scan.progress / scan.total_progress * 100) | round(0) if scan.total_progress else 0 }}%
+                        </div>
+                    </div>
                 {% elif scan.status.value == 'completed' %}
                     <span class="badge bg-success">Completed</span>
                 {% elif scan.status.value == 'queued' %}

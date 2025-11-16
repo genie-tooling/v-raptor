@@ -88,8 +88,7 @@ class Dashboard:
 
     def get_average_quality_metrics_by_repo(self):
         """
-        Gets the average quality metrics (e.g., cyclomatic complexity, LLOC)
-        for each repository from its most recent quality scan.
+        Gets the average quality metrics for each repository from its most recent quality scan.
         """
         # Subquery to find the latest quality scan_id for each repository.
         latest_quality_scan_ids_subquery = self.db_session.query(
@@ -99,11 +98,12 @@ class Dashboard:
             Scan.scan_type == 'quality'
         ).group_by(Scan.repository_id).subquery()
 
-        # Query to get the average metrics per repository based on the latest quality scan.
+        # Query to get the average/first metrics per repository based on the latest quality scan.
+        # We use func.avg for per-file metrics and func.max for project-wide ones (since they are duplicated).
         return self.db_session.query(
             Repository.name,
-            func.avg(QualityMetric.cyclomatic_complexity).label('avg_complexity'),
-            func.avg(QualityMetric.lloc).label('avg_lloc')
+            func.avg(QualityMetric.maintainability_index).label('avg_maintainability'),
+            func.max(QualityMetric.code_coverage).label('code_coverage') # Max works for duplicated project-wide data
         ).join(
             Scan, Repository.id == Scan.repository_id
         ).join(

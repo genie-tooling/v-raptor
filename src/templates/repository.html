@@ -14,21 +14,37 @@
     <div class="card-header">Run New Scan</div>
     <div class="card-body">
         <form action="/run_scan/{{ repo.id }}" method="post" class="d-inline">
-            <div class="form-check form-switch d-inline-block">
-                <input class="form-check-input" type="checkbox" id="auto_patch" name="auto_patch">
-                <label class="form-check-label" for="auto_patch">Auto-Patch</label>
+            <div class="row align-items-end">
+                <div class="col-md-4">
+                    <label for="branch" class="form-label">Branch</label>
+                    <select name="branch" id="branch" class="form-select">
+                        {% for branch in branches %}
+                            <option value="{{ branch }}" {% if branch == repo.primary_branch %}selected{% endif %}>{{ branch }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <div class="form-check form-switch d-inline-block">
+                        <input class="form-check-input" type="checkbox" id="auto_patch" name="auto_patch">
+                        <label class="form-check-label" for="auto_patch">Auto-Patch</label>
+                    </div>
+                    <div class="form-check form-switch d-inline-block ms-3">
+                        <input class="form-check-input" type="checkbox" id="include_tests" name="include_tests">
+                        <label class="form-check-label" for="include_tests">Include Tests</label>
+                    </div>
+                    <div class="form-check form-switch d-inline-block ms-3">
+                        <input class="form-check-input" type="checkbox" id="generate_test_script" name="generate_test_script" {% if config.GENERATE_TEST_SCRIPT_DEFAULT %}checked{% endif %}>
+                        <label class="form-check-label" for="generate_test_script">Generate Test Script</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary ms-3">Run Deep Scan</button>
+                    <form action="/link_cves/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+                        <button type="submit" class="btn btn-info">Link CVEs to Findings</button>
+                    </form>
+                    <form action="/run_quality_scan/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+                        <button type="submit" class="btn btn-warning">Run Code Quality Scan</button>
+                    </form>
+                </div>
             </div>
-            <div class="form-check form-switch d-inline-block ms-3">
-                <input class="form-check-input" type="checkbox" id="include_tests" name="include_tests">
-                <label class="form-check-label" for="include_tests">Include Tests</label>
-            </div>
-            <button type="submit" class="btn btn-primary">Run Deep Scan</button>
-        </form>
-        <form action="/link_cves/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
-            <button type="submit" class="btn btn-info">Link CVEs to Findings</button>
-        </form>
-        <form action="/run_quality_scan/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
-            <button type="submit" class="btn btn-warning">Run Code Quality Scan</button>
         </form>
     </div>
 </div>
@@ -59,6 +75,19 @@
         {% with scans = scans_as_list|sort(attribute='created_at', reverse=True) %}
             {% include '_scans_table.html' %}
         {% endwith %}
+    </div>
+</div>
+
+<div class="card border-warning mt-3">
+    <div class="card-header">SAST Exclusions</div>
+    <div class="card-body">
+        <form action="/repository/{{ repo.id }}/sast_exclusions" method="post">
+            <div class="mb-3">
+                <label for="sast_exclusions" class="form-label">Paths and patterns to exclude (comma-separated)</label>
+                <textarea class="form-control" id="sast_exclusions" name="sast_exclusions" rows="3">{{ repo.sast_exclusions or '' }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Exclusions</button>
+        </form>
     </div>
 </div>
 {% endblock %}

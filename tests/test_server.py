@@ -75,13 +75,10 @@ class TestServer(unittest.TestCase):
         response = self.app.get('/')
         self.assertEqual(response.status_code, 200)
 
-    def test_config_route(self):
-        """Test the config route."""
+    def test_save_settings_route(self):
+        """Test the save_settings route."""
         response = self.app.get('/config')
         self.assertEqual(response.status_code, 200)
-
-    def test_save_llm_settings_route(self):
-        """Test the save_llm_settings route."""
         # Mock the open function to prevent actual file writing
         with patch('builtins.open', MagicMock()) as mock_open:
             data = {
@@ -97,27 +94,25 @@ class TestServer(unittest.TestCase):
                 'patcher_gemini_model': 'gemini-1.5-pro-latest',
                 'gitleaks_path': 'gitleaks',
                 'semgrep_path': 'semgrep',
-                'bandit_path': 'bandit'
+                'bandit_path': 'bandit',
+                'sast_global_exclusions': '.gitignore,*.md',
+                'llm_timeout': '120',
+                'database_url': 'sqlite:///test.db'
             }
-            response = self.app.post('/save_llm_settings', data=data)
+            response = self.app.post('/save_settings', data=data)
             self.assertEqual(response.status_code, 302) # Redirect status code
             self.assertTrue(mock_open.call_count > 0) # Ensure open was called to write config
 
     def test_add_repo_route(self):
         """Test the add_repo route."""
         self.mock_vcs_service_instance.parse_and_validate_repo_url.return_value = ("https://github.com/test/repo.git", "main")
-        self.mock_vcs_service_instance.get_branches.return_value = ["main", "dev"]
         response = self.app.post('/add_repo', data={'repo_url': 'https://github.com/test/repo.git'})
-        self.assertEqual(response.status_code, 200) # Should render select_branch.html
-
-    def test_confirm_add_repo_route(self):
-        """Test the confirm_add_repo route."""
-        response = self.app.post('/confirm_add_repo', data={'repo_url': 'https://github.com/test/new_repo.git', 'branch': 'main'})
-        self.assertEqual(response.status_code, 302) # Redirect
-        repo = self.session.query(Repository).filter_by(url='https://github.com/test/new_repo.git').first()
+        self.assertEqual(response.status_code, 302) # Should redirect
+        repo = self.session.query(Repository).filter_by(url='https://github.com/test/repo.git').first()
         self.assertIsNotNone(repo)
-        self.assertEqual(repo.name, 'new_repo')
-        self.assertEqual(repo.primary_branch, 'main')
+        self.assertEqual(repo.name, 'repo')
+        self.assertIsNone(repo.primary_branch)
+
 
     def test_remove_repo_route(self):
         """Test the remove_repo route."""
@@ -145,7 +140,7 @@ class TestServer(unittest.TestCase):
         response = self.app.post(f'/run_scan/{repo.id}')
         self.assertEqual(response.status_code, 302) # Redirect
         scan = self.session.query(Scan).filter_by(repository_id=repo.id).first()
-        self.mock_q.enqueue.assert_called_once_with('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=False, include_tests=False)
+        self.mock_q.enqueue.assert_called_once_with('src.worker.run_deep_scan_job', repo.url, scan.id, auto_patch=False, include_tests=False, branch=None)
 
     def test_scan_new_commits_route(self):
         """Test the scan_new_commits route."""

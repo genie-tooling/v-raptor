@@ -30,7 +30,7 @@ class TestWorker(unittest.TestCase):
 
         worker.run_deep_scan_job('test_url', 1, auto_patch=True)
 
-        mock_orchestrator.run_deep_scan.assert_called_once_with('test_url', 1, auto_patch=True, include_tests=False)
+        mock_orchestrator.run_deep_scan.assert_called_once_with('test_url', 1, auto_patch=True, include_tests=False, branch=None)
         mock_orchestrator.db_session.close.assert_called_once()
 
     @patch('src.worker._get_orchestrator')

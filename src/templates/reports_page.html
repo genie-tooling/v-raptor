@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h1>Reports</h1>
+
+<div class="card border-primary mb-3">
+    <div class="card-header">Filters</div>
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-md-4">
+                <label for="repository_id" class="form-label">Repository</label>
+                <select name="repository_id" id="repository_id" class="form-select">
+                    <option value="">All</option>
+                    {% for repo in repos %}
+                        <option value="{{ repo.id }}" {% if repo_filter == repo.id|string %}selected{% endif %}>{{ repo.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="severity" class="form-label">Severity</label>
+                <select name="severity" id="severity" class="form-select">
+                    <option value="">All</option>
+                    <option value="CRITICAL" {% if severity_filter == 'CRITICAL' %}selected{% endif %}>Critical</option>
+                    <option value="HIGH" {% if severity_filter == 'HIGH' %}selected{% endif %}>High</option>
+                    <option value="MEDIUM" {% if severity_filter == 'MEDIUM' %}selected{% endif %}>Medium</option>
+                    <option value="LOW" {% if severity_filter == 'LOW' %}selected{% endif %}>Low</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="scanner" class="form-label">Scanner</label>
+                <select name="scanner" id="scanner" class="form-select">
+                    <option value="">All</option>
+                    <option value="Semgrep" {% if scanner_filter == 'Semgrep' %}selected{% endif %}>Semgrep</option>
+                    <option value="Bandit" {% if scanner_filter == 'Bandit' %}selected{% endif %}>Bandit</option>
+                    <option value="Gitleaks" {% if scanner_filter == 'Gitleaks' %}selected{% endif %}>Gitleaks</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-secondary">
+    <div class="card-header">Findings</div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Repository</th>
+                    <th>File</th>
+                    <th>Line</th>
+                    <th>Description</th>
+                    <th>Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in findings %}
+                <tr>
+                    <td><a href="/finding/{{ finding.id }}">#{{ finding.id }}</a></td>
+                    <td><a href="/repository/{{ finding.scan.repository.id }}">{{ finding.scan.repository.name }}</a></td>
+                    <td>{{ finding.file_path }}</td>
+                    <td>{{ finding.line_number }}</td>
+                    <td>{{ finding.description }}</td>
+                    <td>
+                        {% if finding.severity == 'CRITICAL' %}
+                            <span class="badge bg-danger">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'HIGH' %}
+                            <span class="badge bg-warning">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'MEDIUM' %}
+                            <span class="badge bg-info">{{ finding.severity }}</span>
+                        {% elif finding.severity == 'LOW' %}
+                            <span class="badge bg-success">{{ finding.severity }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ finding.severity or 'N/A' }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

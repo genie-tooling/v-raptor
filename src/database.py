@@ -18,6 +18,7 @@ class Repository(Base):
     needs_scan = Column(Boolean, default=False)
     periodic_scan_enabled = Column(Boolean, default=False)
     periodic_scan_interval = Column(Integer, default=86400) # 24 hours
+    sast_exclusions = Column(Text, nullable=True)
     scans = relationship("Scan", back_populates="repository")
 
 class ScanStatus(enum.Enum):
@@ -25,6 +26,7 @@ class ScanStatus(enum.Enum):
     RUNNING = 'running'
     COMPLETED = 'completed'
     FAILED = 'failed'
+
 
 class Scan(Base):
     __tablename__ = 'scan'
@@ -35,8 +37,12 @@ class Scan(Base):
     status_message = Column(String)
     triggering_commit_hash = Column(String)
     job_id = Column(String)
+    branch = Column(String, nullable=True)
+    progress = Column(Integer, default=0)
+    total_progress = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     auto_patch_enabled = Column(Boolean, default=False)
+    generate_test_script = Column(Boolean, default=False)
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
     quality_metrics = relationship("QualityMetric", back_populates="scan", cascade="all, delete-orphan")
     repository = relationship("Repository", back_populates="scans")
@@ -100,12 +106,22 @@ class QualityMetric(Base):
     id = Column(Integer, primary_key=True)
     scan_id = Column(Integer, ForeignKey('scan.id'))
     file_path = Column(String)
+    # Per-file metrics
     cyclomatic_complexity = Column(Integer)
     code_churn = Column(Integer)
     sloc = Column(Integer)
     lloc = Column(Integer)
     comments = Column(Integer)
     halstead_volume = Column(Float)
+    maintainability_index = Column(Float)
+    bug_risk_score = Column(Float)
+    # Project-wide metrics (will be duplicated across rows for a scan)
+    code_coverage = Column(Float)
+    tests_passing = Column(Integer)
+    duplicated_lines = Column(Integer)
+    linter_issues = Column(Integer)
+    coupling = Column(Float)
+    cohesion = Column(Float)
     scan = relationship("Scan", back_populates="quality_metrics")
     interpretation = relationship("QualityInterpretation", uselist=False, back_populates="quality_metric")
 

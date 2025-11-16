@@ -7,80 +7,31 @@
 </div>
 
 <div class="card border-secondary">
-    <div class="card-header">Metrics</div>
-    <div class="card-body">
+    <div class="card-header">File-Level Metrics</div>
+    <div class="card-body" style="overflow-x: auto;">
         <table class="table table-hover">
             <thead>
                 <tr>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='file_path', sort_order='asc' if sort_by == 'file_path' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='file_path', sort_order='asc' if sort_by == 'file_path' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            File Path
-                            {% if sort_by == 'file_path' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='cyclomatic_complexity', sort_order='asc' if sort_by == 'cyclomatic_complexity' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='cyclomatic_complexity', sort_order='asc' if sort_by == 'cyclomatic_complexity' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            Cyclomatic Complexity
-                            {% if sort_by == 'cyclomatic_complexity' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='code_churn', sort_order='asc' if sort_by == 'code_churn' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='code_churn', sort_order='asc' if sort_by == 'code_churn' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            Code Churn
-                            {% if sort_by == 'code_churn' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='sloc', sort_order='asc' if sort_by == 'sloc' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='sloc', sort_order='asc' if sort_by == 'sloc' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            SLOC
-                            {% if sort_by == 'sloc' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='lloc', sort_order='asc' if sort_by == 'lloc' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='lloc', sort_order='asc' if sort_by == 'lloc' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            LLOC
-                            {% if sort_by == 'lloc' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='comments', sort_order='asc' if sort_by == 'comments' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='comments', sort_order='asc' if sort_by == 'comments' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            Comments
-                            {% if sort_by == 'comments' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">
-                        <a href="{% if scan_id %}{{ url_for('scan', scan_id=scan_id, sort_by='halstead_volume', sort_order='asc' if sort_by == 'halstead_volume' and sort_order == 'desc' else 'desc') }}{% else %}{{ url_for('quality', repo_id=repo.id, sort_by='halstead_volume', sort_order='asc' if sort_by == 'halstead_volume' and sort_order == 'desc' else 'desc') }}{% endif %}">
-                            Halstead Volume
-                            {% if sort_by == 'halstead_volume' %}
-                                {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th scope="col">Actions</th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='file_path', sort_order='desc' if sort_by == 'file_path' and sort_order == 'asc' else 'asc') }}">File Path</a></th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='maintainability_index', sort_order='desc' if sort_by == 'maintainability_index' and sort_order == 'asc' else 'asc') }}">Maintainability</a></th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='bug_risk_score', sort_order='desc' if sort_by == 'bug_risk_score' and sort_order == 'asc' else 'asc') }}">Bug Risk</a></th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='cyclomatic_complexity', sort_order='desc' if sort_by == 'cyclomatic_complexity' and sort_order == 'asc' else 'asc') }}">Complexity</a></th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='code_churn', sort_order='desc' if sort_by == 'code_churn' and sort_order == 'asc' else 'asc') }}">Churn</a></th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='sloc', sort_order='desc' if sort_by == 'sloc' and sort_order == 'asc' else 'asc') }}">SLOC</a></th>
+                    <th><a href="{{ url_for(request.endpoint, repo_id=repo.id, scan_id=scan_id, sort_by='lloc', sort_order='desc' if sort_by == 'lloc' and sort_order == 'asc' else 'asc') }}">LLOC</a></th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for metric in metrics %}
                 <tr>
                     <td>{{ metric.file_path }}</td>
+                    <td>{{ "%.2f"|format(metric.maintainability_index) }}</td>
+                    <td>{{ "%.2f"|format(metric.bug_risk_score) }}</td>
                     <td>{{ metric.cyclomatic_complexity }}</td>
                     <td>{{ metric.code_churn }}</td>
                     <td>{{ metric.sloc }}</td>
                     <td>{{ metric.lloc }}</td>
-                    <td>{{ metric.comments }}</td>
-                    <td>{{ metric.halstead_volume }}</td>
                     <td>
                         <a href="{{ url_for('interpret_quality_metrics', metric_id=metric.id) }}" class="btn btn-primary btn-sm" onclick="showLoading(this)">
                             <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
@@ -91,6 +42,28 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<div class="card border-info mt-4">
+    <div class="card-header">Project-Wide Metrics</div>
+    <div class="card-body">
+        {% if metrics %}
+            <p><strong>Code Coverage:</strong> {{ "%.2f"|format(metrics[0].code_coverage) }}%</p>
+            <p><strong>Tests Passing:</strong> 
+                {% if metrics[0].tests_passing == 1 %}
+                    <span class="badge bg-success">Yes</span>
+                {% else %}
+                    <span class="badge bg-danger">No</span>
+                {% endif %}
+            </p>
+            <p><strong>Linter Issues Found:</strong> {{ metrics[0].linter_issues }}</p>
+            <p><strong>Duplicated Lines Found (PMD):</strong> {{ metrics[0].duplicated_lines }}</p>
+            <p><strong>Average Coupling:</strong> {{ "%.2f"|format(metrics[0].coupling) }}</p>
+            <p><strong>Average Cohesion (LCOM4):</strong> {{ "%.2f"|format(metrics[0].cohesion) }}</p>
+        {% else %}
+            <p>No project-wide metrics available for this scan.</p>
+        {% endif %}
     </div>
 </div>
 

@@ -54,4 +54,6 @@ dependencies = [
     "ollama",
     "radon",
     "googlesearch-python",
+    "pytest",
+    "pytest-cov"
 ]

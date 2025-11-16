@@ -16,12 +16,12 @@
                 <a class="nav-link" data-bs-toggle="tab" href="#api-keys">API Keys</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#tool-paths">Tool Paths</a>
+                <a class="nav-link" data-bs-toggle="tab" href="#global-settings">Global Settings</a>
             </li>
         </ul>
     </div>
     <div class="card-body">
-        <form action="/save_llm_settings" method="post">
+        <form action="/save_settings" method="post">
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="scanner">
                     <p>This model is used for analyzing code and finding vulnerabilities.</p>
@@ -120,7 +120,7 @@
                         </form>
                     </div>
                 </div>
-                <div class="tab-pane fade" id="tool-paths">
+                <div class="tab-pane fade" id="global-settings">
                     <div class="mb-3">
                         <label for="gitleaks_path" class="form-label">Gitleaks Path</label>
                         <input type="text" name="gitleaks_path" class="form-control" value="{{ config.GITLEAKS_PATH }}">
@@ -133,10 +133,22 @@
                         <label for="bandit_path" class="form-label">Bandit Path</label>
                         <input type="text" name="bandit_path" class="form-control" value="{{ config.BANDIT_PATH }}">
                     </div>
+                    <div class="mb-3">
+                        <label for="sast_global_exclusions" class="form-label">SAST Global Exclusions (comma-separated)</label>
+                        <input type="text" name="sast_global_exclusions" class="form-control" value="{{ config.SAST_GLOBAL_EXCLUSIONS|join(', ') }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="llm_timeout" class="form-label">LLM Timeout (seconds)</label>
+                        <input type="number" name="llm_timeout" class="form-control" value="{{ config.LLM_TIMEOUT }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="database_url" class="form-label">Database URL</label>
+                        <input type="text" name="database_url" class="form-control" value="{{ config.DATABASE_URL }}">
+                    </div>
                 </div>
             </div>
             <hr>
-            <button type="submit" class="btn btn-primary">Save All Settings</button>
+            <button type="submit" class="btn btn-primary">Save Global Settings</button>
         </form>
     </div>
 </div>

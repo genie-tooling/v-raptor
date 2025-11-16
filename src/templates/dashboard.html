@@ -45,7 +45,17 @@
 <div class="row mt-4">
     <div class="col-md-4">
         <div class="card border-secondary">
-            <div class="card-header">Findings by Severity</div>
+            <div class="card-header">
+                Findings by Severity
+                <div class="float-end">
+                    <select id="severity-repo-filter" class="form-select form-select-sm">
+                        <option value="">All Repositories</option>
+                        {% for repo in repos %}
+                            <option value="{{ repo.id }}" {% if request.args.get('repo_id') == repo.id|string %}selected{% endif %}>{{ repo.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
             <div class="card-body">
                 <canvas id="severityChart"></canvas>
             </div>
@@ -104,14 +114,14 @@
             labels: {{ quality_metrics.labels | tojson }},
             datasets: [
                 {
-                    label: 'Avg. Cyclomatic Complexity',
-                    data: {{ quality_metrics.avg_complexity | tojson }},
+                    label: 'Avg. Maintainability Index',
+                    data: {{ quality_metrics.avg_maintainability | tojson }},
                     backgroundColor: '#17a2b8', // Info Blue
                 },
                 {
-                    label: 'Avg. Logical Lines of Code',
-                    data: {{ quality_metrics.avg_lloc | tojson }},
-                    backgroundColor: '#6f42c1', // Purple
+                    label: 'Code Coverage (%)',
+                    data: {{ quality_metrics.code_coverage | tojson }},
+                    backgroundColor: '#28a745', // Green
                 }
             ]
         };
@@ -119,6 +129,15 @@
         const severityChart = new Chart(document.getElementById('severityChart'), {
             type: 'pie',
             data: severityData,
+            options: {
+                onClick: (evt, elements) => {
+                    if (elements.length > 0) {
+                        const clickedIndex = elements[0].index;
+                        const severity = severityData.labels[clickedIndex];
+                        window.location.href = `/reports?severity=${severity}`;
+                    }
+                }
+            }
         });
 
         const repoChart = new Chart(document.getElementById('repoChart'), {
@@ -132,10 +151,20 @@
             options: {
                 scales: {
                     y: {
-                        beginAtZero: true
+                        beginAtZero: true,
+                        max: 100
                     }
                 }
             }
+        });
+
+        document.getElementById('severity-repo-filter').addEventListener('change', function() {
+            const repoId = this.value;
+            let url = '/dashboard';
+            if (repoId) {
+                url += `?repo_id=${repoId}`;
+            }
+            window.location.href = url;
         });
     });
 </script>

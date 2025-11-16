@@ -25,5 +25,9 @@ DATABASE_URL = 'sqlite:///v-raptor.db'
 GITLEAKS_PATH = 'gitleaks'
 SEMGREP_PATH = 'semgrep'
 BANDIT_PATH = 'bandit'
+SAST_GLOBAL_EXCLUSIONS = ['.gitignore', '*.md']
+GENERATE_TEST_SCRIPT_DEFAULT = False
+
+
 
   
