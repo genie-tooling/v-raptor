@@ -87,6 +87,9 @@ def save_settings():
         f.write("# --- SAST Global Exclusions ---\n")
         exclusions = [item.strip() for item in request.form.get('sast_global_exclusions').split(',')]
         f.write(f"SAST_GLOBAL_EXCLUSIONS = {exclusions}\n")
+        f.write(f"DOCKER_REGISTRY = '{request.form.get('docker_registry')}'\n")
+        test_container_images = [item.strip() for item in request.form.get('test_container_images').split(',')]
+        f.write(f"TEST_CONTAINER_IMAGES = {test_container_images}\n")
 
     if 'gemini_api_key' in request.form and request.form['gemini_api_key']:
         with open('api_key.txt', 'w') as f:
@@ -113,8 +116,33 @@ def failed_jobs():
             })
     return render_template('failed_jobs.html', failed_jobs=failed_jobs)
 
-@app.route('/reports_dashboard')
-def reports_dashboard():
+
+
+@app.route('/findings')
+def findings():
+    session = g.db_session
+    repo_filter = request.args.get('repository_id')
+    severity_filter = request.args.get('severity')
+    scanner_filter = request.args.get('scanner')
+
+    repos = session.query(Repository).all()
+    findings_query = session.query(Finding)
+
+    if repo_filter:
+        findings_query = findings_query.join(Scan).filter(Scan.repository_id == repo_filter)
+    if severity_filter:
+        findings_query = findings_query.filter(Finding.severity == severity_filter)
+    if scanner_filter:
+        findings_query = findings_query.filter(Finding.description.like(f"{scanner_filter}:%"))
+
+    findings = findings_query.order_by(Finding.id.desc()).all()
+    
+    return render_template('findings_page.html', findings=findings, repos=repos,
+                           repo_filter=repo_filter, severity_filter=severity_filter,
+                           scanner_filter=scanner_filter)
+
+@app.route('/reports')
+def reports():
     session = g.db_session
     
     # Subquery to find the latest scan_id for each repository
@@ -153,30 +181,26 @@ def reports_dashboard():
         Scan.id == latest_scan_ids_subquery.c.latest_scan_id
     ).group_by(Repository.id, Repository.name).order_by(func.count(Finding.id).desc()).limit(5).all()
 
-    return render_template('reports.html', top_vulnerabilities=top_vulnerabilities, top_repos=top_repos)
+    # Query for vulnerabilities per LOC
+    latest_scan = session.query(
+        Scan.repository_id,
+        func.max(Scan.id).label('max_scan_id')
+    ).group_by(Scan.repository_id).subquery()
 
-@app.route('/reports')
-def reports():
-    session = g.db_session
-    repo_filter = request.args.get('repository_id')
-    severity_filter = request.args.get('severity')
-    scanner_filter = request.args.get('scanner')
+    vulnerabilities_per_loc = session.query(
+        Repository.name,
+        func.sum(QualityMetric.sloc).label('total_sloc'),
+        func.count(Finding.id).label('total_vulnerabilities'),
+        func.sum(case((Finding.severity == 'HIGH', 1), else_=0)).label('high_vulnerabilities'),
+        func.sum(case((Finding.severity == 'MEDIUM', 1), else_=0)).label('medium_vulnerabilities'),
+        func.sum(case((Finding.severity == 'LOW', 1), else_=0)).label('low_vulnerabilities')
+    ).join(latest_scan, Repository.id == latest_scan.c.repository_id
+    ).join(Scan, Scan.id == latest_scan.c.max_scan_id
+    ).outerjoin(Finding, Finding.scan_id == Scan.id
+    ).outerjoin(QualityMetric, QualityMetric.scan_id == Scan.id
+    ).group_by(Repository.name).all()
 
-    repos = session.query(Repository).all()
-    findings_query = session.query(Finding)
-
-    if repo_filter:
-        findings_query = findings_query.join(Scan).filter(Scan.repository_id == repo_filter)
-    if severity_filter:
-        findings_query = findings_query.filter(Finding.severity == severity_filter)
-    if scanner_filter:
-        findings_query = findings_query.filter(Finding.description.like(f"{scanner_filter}:%"))
-
-    findings = findings_query.order_by(Finding.id.desc()).all()
-    
-    return render_template('reports_page.html', findings=findings, repos=repos,
-                           repo_filter=repo_filter, severity_filter=severity_filter,
-                           scanner_filter=scanner_filter)
+    return render_template('reports.html', top_vulnerabilities=top_vulnerabilities, top_repos=top_repos, vulnerabilities_per_loc=vulnerabilities_per_loc)
 
 
 @app.route('/failed_jobs/<job_id>')
@@ -256,6 +280,36 @@ def periodic_scan_config(repo_id):
         session.commit()
         flash("Periodic scan settings updated.", 'success')
     return redirect(url_for('repository', repo_id=repo_id))
+
+@app.route('/repository/<int:repo_id>/test_command', methods=['POST'])
+def save_test_command(repo_id):
+    session = g.db_session
+    repo = session.query(Repository).get(repo_id)
+    if repo:
+        test_command = request.form.get('test_command', '').strip().replace('\r\n', '\n')
+        repo.test_command = test_command
+        repo.use_venv = 'use_venv' in request.form
+        repo.python_version = request.form.get('python_version')
+        repo.test_container = request.form.get('test_container')
+        session.commit()
+        flash("Test command updated successfully.", 'success')
+    return redirect(url_for('repository', repo_id=repo_id))
+
+@app.route('/repository/<int:repo_id>/generate_test_command', methods=['POST'])
+def generate_test_command(repo_id):
+    session = g.db_session
+    repo = session.query(Repository).get(repo_id)
+    if repo:
+        vcs_service = VCSService(git_provider='github', token='')
+        orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
+        test_command = orchestrator.generate_test_command(repo)
+        if test_command:
+            repo.test_command = test_command
+            session.commit()
+            return jsonify({'test_command': test_command})
+        else:
+            return jsonify({'error': 'Could not generate test command.'}), 500
+    return jsonify({'error': 'Repository not found.'}), 404
 
 @app.route('/remove_repo/<int:repo_id>', methods=['POST'])
 def remove_repo(repo_id):
@@ -344,35 +398,6 @@ def scans():
     scans = session.query(Scan).order_by(Scan.created_at.desc()).all()
     return render_template('scans.html', scans=scans)
 
-@app.route('/findings')
-def findings():
-    session = g.db_session
-    findings = session.query(Finding).order_by(Finding.id.desc()).all()
-    
-    for finding in findings:
-        description_no_paren = finding.description.replace('(', '').replace(')', '')
-        url_match = re.search(r'https?://\S+', description_no_paren)
-        
-        if url_match:
-            url = url_match.group(0)
-            text = finding.description.replace(f'({url})', '').strip()
-            finding.description_text = text
-            finding.description_url = url
-            
-            # Extract rule ID
-            if 'semgrep.dev' in url:
-                finding.rule_id = url.split('/')[-1]
-            elif 'bandit.readthedocs.io' in url:
-                finding.rule_id = url.split('/')[-1].replace('.html', '')
-            else:
-                finding.rule_id = 'doc'
-        else:
-            finding.description_text = finding.description
-            finding.description_url = None
-            finding.rule_id = None
-            
-    return render_template('findings.html', findings=findings)
-
 @app.route('/findings/by_description')
 def findings_by_description():
     description = request.args.get('description')
@@ -398,6 +423,20 @@ def run_scan(repo_id):
         scan.job_id = job.id
         session.commit()
         flash(f"Deep scan initiated for '{repo.name}' on branch '{branch}'.", 'info')
+    return redirect(url_for('repository', repo_id=repo_id))
+
+@app.route('/run_test_scan/<int:repo_id>', methods=['POST'])
+def run_test_scan(repo_id):
+    session = g.db_session
+    repo = session.query(Repository).get(repo_id)
+    if repo:
+        scan = Scan(repository_id=repo.id, scan_type='test', status='queued')
+        session.add(scan)
+        session.commit()
+        job = q.enqueue('src.worker.run_test_scan_job', repo.id, scan.id)
+        scan.job_id = job.id
+        session.commit()
+        flash(f"Test scan initiated for '{repo.name}'.", 'info')
     return redirect(url_for('repository', repo_id=repo_id))
 
 @app.route('/scan_new_commits/<int:repo_id>', methods=['POST'])

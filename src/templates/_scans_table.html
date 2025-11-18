@@ -3,6 +3,7 @@
         <tr>
             <th scope="col">Scan ID</th>
             <th scope="col">Repository</th>
+            <th scope="col">Branch</th>
             <th scope="col">Type</th>
             <th scope="col">Status</th>
             <th scope="col">Status Message</th>
@@ -16,6 +17,7 @@
         <tr data-scan-id="{{ scan.id }}">
             <td><a href="/scan/{{ scan.id }}">#{{ scan.id }}</a></td>
             <td><a href="/repository/{{ scan.repository.id }}">{{ scan.repository.name }}</a></td>
+            <td>{{ scan.branch if scan.branch else 'N/A' }}</td>
             <td>{{ scan.scan_type }}</td>
             <td class="status-cell">
                 {% if scan.status.value == 'running' %}

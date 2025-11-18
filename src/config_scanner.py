@@ -41,8 +41,8 @@ def find_config_files(directory):
     return config_files
 
 if __name__ == '__main__':
-    from .config import LLM_PROVIDER
-    llm = LLMService(llm_provider=LLM_PROVIDER)
+    from .config import SCANNER_LLM_PROVIDER
+    llm = LLMService(llm_provider=SCANNER_LLM_PROVIDER)
     
     # Create a dummy config file for testing
     dummy_file = "config.yaml"

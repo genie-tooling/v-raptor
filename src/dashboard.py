@@ -27,7 +27,7 @@ class Dashboard:
             Scan.repository_id == latest_scan_ids_subquery.c.repository_id
         ).filter(
             Scan.id == latest_scan_ids_subquery.c.latest_scan_id
-        ).group_by(Finding.severity).all()
+        ).group_by(Finding.severity)
 
     def get_findings_by_repo(self):
         """Gets the number of findings for each repository from the most recent non-quality scan."""

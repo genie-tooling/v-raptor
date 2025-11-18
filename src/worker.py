@@ -108,6 +108,35 @@ def run_quality_scan_job(scan_id):
         if orchestrator and orchestrator.db_session:
             orchestrator.db_session.close()
 
+def run_test_scan_job(repo_id, scan_id):
+    """
+    This is the background task that will be executed by the RQ worker.
+    It runs a test scan on a repository.
+    """
+    logging.info(f"Starting test scan job for repo: {repo_id}")
+    orchestrator = None
+    try:
+        orchestrator = _get_orchestrator()
+        if not orchestrator:
+            raise RuntimeError("Orchestrator could not be initialized. Check environment and configuration.")
+        
+        orchestrator.run_test_scan(repo_id, scan_id)
+        logging.info(f"Test scan job completed for repo: {repo_id}")
+    except Exception as e:
+        logging.error(f"Test scan job failed for repo {repo_id}: {e}", exc_info=True)
+        session = get_session()()
+        try:
+            scan = session.query(Scan).get(scan_id)
+            if scan:
+                scan.status = ScanStatus.FAILED
+                scan.status_message = f"Worker failed: {e}"
+                session.commit()
+        finally:
+            session.close()
+    finally:
+        if orchestrator and orchestrator.db_session:
+            orchestrator.db_session.close()
+
 def link_cves_to_findings_job(repo_id, scan_id):
     """Job to link CVEs to findings for a repository."""
     session = get_session()()

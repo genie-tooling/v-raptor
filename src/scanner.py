@@ -72,11 +72,6 @@ class Scanner:
                         'severity': result['extra']['severity'],
                     }
                     self.vulnerability_processor.process_vulnerability(vulnerability, repo_path, scan.repository.url, scan)
-                
-                for file in self.get_sast_files(repo_path, include_tests):
-                    scan.progress += 1
-                self.db_session.commit()
-                logging.info(f"Semgrep scan found {len(report['results'])} results. Progress updated to {scan.progress}")
 
         except subprocess.CalledProcessError as e:
             logging.error(f"Semgrep scan failed: {e.stderr}")
@@ -119,13 +114,9 @@ class Scanner:
                     }
                     self.vulnerability_processor.process_vulnerability(vulnerability, repo_path, scan.repository.url, scan)
                 
-                sast_files = self.get_sast_files(repo_path, include_tests)
-                logging.info(f"Found {len(sast_files)} files for SAST scan.")
-                logging.info(f"Progress before bandit scan: {scan.progress}")
-                for file in sast_files:
+                for file in self.get_sast_files(repo_path, include_tests):
                     scan.progress += 1
                 self.db_session.commit()
-                logging.info(f"Progress after bandit scan: {scan.progress}")
         except Exception as e:
             logging.error(f"An error occurred during Bandit scan: {e}")
 

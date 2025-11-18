@@ -145,6 +145,14 @@
                         <label for="database_url" class="form-label">Database URL</label>
                         <input type="text" name="database_url" class="form-control" value="{{ config.DATABASE_URL }}">
                     </div>
+                    <div class="mb-3">
+                        <label for="docker_registry" class="form-label">Docker Registry</label>
+                        <input type="text" name="docker_registry" class="form-control" value="{{ config.DOCKER_REGISTRY }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="test_container_images" class="form-label">Test Container Images (comma-separated)</label>
+                        <textarea name="test_container_images" class="form-control" rows="3">{{ config.TEST_CONTAINER_IMAGES|join(', ') }}</textarea>
+                    </div>
                 </div>
             </div>
             <hr>

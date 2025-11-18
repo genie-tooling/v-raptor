@@ -37,14 +37,17 @@
                         <label class="form-check-label" for="generate_test_script">Generate Test Script</label>
                     </div>
                     <button type="submit" class="btn btn-primary ms-3">Run Deep Scan</button>
-                    <form action="/link_cves/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
-                        <button type="submit" class="btn btn-info">Link CVEs to Findings</button>
-                    </form>
-                    <form action="/run_quality_scan/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
-                        <button type="submit" class="btn btn-warning">Run Code Quality Scan</button>
-                    </form>
                 </div>
             </div>
+        </form>
+        <form action="/run_test_scan/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+            <button type="submit" class="btn btn-success">Run Tests</button>
+        </form>
+        <form action="/link_cves/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+            <button type="submit" class="btn btn-info">Link CVEs to Findings</button>
+        </form>
+        <form action="/run_quality_scan/{{ repo.id }}" method="post" style="display: inline;" class="ms-2">
+            <button type="submit" class="btn btn-warning">Run Code Quality Scan</button>
         </form>
     </div>
 </div>
@@ -57,11 +60,47 @@
                 <input class="form-check-input" type="checkbox" name="periodic_scan_enabled" value="true" id="periodicScanSwitch" {% if repo.periodic_scan_enabled %}checked{% endif %}>
                 <label class="form-check-label" for="periodicScanSwitch">Enable Periodic Scanning</label>
             </div>
-            <div class="mt-3">
+            <div id="periodic_scan_wrapper" class="mt-3 {% if not repo.periodic_scan_enabled %}d-none{% endif %}">
                 <label for="periodicScanInterval" class="form-label">Scan Interval (in seconds)</label>
                 <input type="number" class="form-control" id="periodicScanInterval" name="periodic_scan_interval" value="{{ repo.periodic_scan_interval }}">
+                <button type="submit" class="btn btn-primary mt-3">Save Settings</button>
             </div>
-            <button type="submit" class="btn btn-primary mt-3">Save Settings</button>
+        </form>
+    </div>
+</div>
+
+<div class="card border-success mb-3">
+    <div class="card-header">Test Configuration</div>
+    <div class="card-body">
+        <form action="/repository/{{ repo.id }}/test_command" method="post">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="customize_test_command" name="customize_test_command" {% if repo.test_command %}checked{% endif %}>
+                <label class="form-check-label" for="customize_test_command">Customize Test Command</label>
+            </div>
+            <div id="test_command_wrapper" class="{% if not repo.test_command %}d-none{% endif %}">
+                <div class="mb-3">
+                    <label for="test_command" class="form-label">Test Command</label>
+                    <textarea class="form-control" id="test_command" name="test_command" rows="3">{{ repo.test_command }}</textarea>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="use_venv" name="use_venv" {% if repo.use_venv %}checked{% endif %}>
+                    <label class="form-check-label" for="use_venv">Use Virtual Env</label>
+                </div>
+                <div class="mb-3" id="python-version-group" style="display: {% if repo.use_venv %}block{% else %}none{% endif %};">
+                    <label for="python_version" class="form-label">Python Version</label>
+                    <input type="text" class="form-control" id="python_version" name="python_version" value="{{ repo.python_version }}">
+                </div>
+                <div class="mb-3">
+                    <label for="test_container" class="form-label">Test Container</label>
+                    <select class="form-select" id="test_container" name="test_container">
+                        {% for container in config.TEST_CONTAINER_IMAGES %}
+                            <option value="{{ container }}" {% if repo.test_container == container %}selected{% endif %}>{{ container }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Command</button>
+                <button type="button" class="btn btn-secondary" id="generate_test_command">Generate Test Command</button>
+            </div>
         </form>
     </div>
 </div>
@@ -82,12 +121,93 @@
     <div class="card-header">SAST Exclusions</div>
     <div class="card-body">
         <form action="/repository/{{ repo.id }}/sast_exclusions" method="post">
-            <div class="mb-3">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="customize_exclusions" name="customize_exclusions" {% if repo.sast_exclusions %}checked{% endif %}>
+                <label class="form-check-label" for="customize_exclusions">Customize file exclusion list</label>
+            </div>
+            <div id="sast_exclusions_wrapper" class="mb-3 mt-2 {% if not repo.sast_exclusions %}d-none{% endif %}">
                 <label for="sast_exclusions" class="form-label">Paths and patterns to exclude (comma-separated)</label>
-                <textarea class="form-control" id="sast_exclusions" name="sast_exclusions" rows="3">{{ repo.sast_exclusions or '' }}</textarea>
+                <textarea class="form-control" id="sast_exclusions" name="sast_exclusions" rows="3">{{ repo.sast_exclusions or config.SAST_GLOBAL_EXCLUSIONS|join(', ') }}</textarea>
             </div>
             <button type="submit" class="btn btn-primary">Save Exclusions</button>
         </form>
     </div>
 </div>
+
+<script>
+    function flash(message, category) {
+        const container = document.querySelector('.container.mt-4');
+        const alert = document.createElement('div');
+        alert.className = `alert alert-dismissible alert-${category}`;
+        alert.innerHTML = `
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            ${message}
+        `;
+        container.prepend(alert);
+    }
+
+    document.getElementById('periodicScanSwitch').addEventListener('change', function() {
+        var wrapper = document.getElementById('periodic_scan_wrapper');
+        if (this.checked) {
+            wrapper.classList.remove('d-none');
+        } else {
+            wrapper.classList.add('d-none');
+        }
+    });
+
+    document.getElementById('use_venv').addEventListener('change', function() {
+        var pythonVersionGroup = document.getElementById('python-version-group');
+        if (this.checked) {
+            pythonVersionGroup.style.display = 'block';
+        } else {
+            pythonVersionGroup.style.display = 'none';
+        }
+    });
+
+    document.getElementById('customize_test_command').addEventListener('change', function() {
+        var wrapper = document.getElementById('test_command_wrapper');
+        if (this.checked) {
+            wrapper.classList.remove('d-none');
+        } else {
+            wrapper.classList.add('d-none');
+        }
+    });
+
+    document.getElementById('customize_exclusions').addEventListener('change', function() {
+        var wrapper = document.getElementById('sast_exclusions_wrapper');
+        if (this.checked) {
+            wrapper.classList.remove('d-none');
+        } else {
+            wrapper.classList.add('d-none');
+        }
+    });
+
+    document.getElementById('generate_test_command').addEventListener('click', function() {
+        var button = this;
+        var originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+
+        fetch('/repository/{{ repo.id }}/generate_test_command', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.test_command) {
+                document.getElementById('test_command').value = data.test_command;
+                flash('Test command generated successfully.', 'success');
+            } else {
+                flash('Could not generate test command.', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            flash('An error occurred while generating the test command.', 'error');
+        })
+        .finally(() => {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        });
+    });
+</script>
 {% endblock %}

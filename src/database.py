@@ -19,6 +19,10 @@ class Repository(Base):
     periodic_scan_enabled = Column(Boolean, default=False)
     periodic_scan_interval = Column(Integer, default=86400) # 24 hours
     sast_exclusions = Column(Text, nullable=True)
+    test_command = Column(String, default='pytest')
+    use_venv = Column(Boolean, default=False)
+    python_version = Column(String, nullable=True)
+    test_container = Column(String, nullable=True)
     scans = relationship("Scan", back_populates="repository")
 
 class ScanStatus(enum.Enum):
@@ -43,6 +47,7 @@ class Scan(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     auto_patch_enabled = Column(Boolean, default=False)
     generate_test_script = Column(Boolean, default=False)
+    test_output = Column(Text, nullable=True)
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
     quality_metrics = relationship("QualityMetric", back_populates="scan", cascade="all, delete-orphan")
     repository = relationship("Repository", back_populates="scans")
@@ -141,6 +146,11 @@ _Session = sessionmaker(bind=engine)
 
 def init_db():
     """Creates all tables in the database."""
+    Base.metadata.create_all(engine)
+
+def reset_db():
+    """Drops all tables and recreates them."""
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
 def get_session():

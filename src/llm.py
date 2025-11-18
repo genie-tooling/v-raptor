@@ -290,6 +290,22 @@ Provide ONLY the fix in the git diff format. Do not include a commit message or 
 Start the diff with '--- a/' and '+++ b/'."""
         return self._create_chat_completion(self.patcher_client, self._get_model_name('patcher'), prompt, is_json=False)
 
+    def generate_test_command(self, files, pyproject_toml, requirements_txt):
+        prompt = f"""You are a senior software engineer specializing in Python. Based on the following file structure and dependency files, generate a single line command to run all pytest tests in the repository.
+
+File structure:
+{files}
+
+pyproject.toml:
+{pyproject_toml}
+
+requirements.txt:
+{requirements_txt}
+
+Respond with ONLY the command to run the tests. Do not include any explanations or conversational text.
+"""
+        return self._create_chat_completion(self.patcher_client, self._get_model_name('patcher'), prompt, is_json=False)
+
     def analyze_configuration(self, config_content):
         prompt = f"""You are a senior security engineer. Analyze the following configuration file for security misconfigurations.
 

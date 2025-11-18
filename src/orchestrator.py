@@ -256,3 +256,71 @@ class Orchestrator:
     def chat_with_quality_interpretation(self, interpretation_id, message):
         """Chats with a quality interpretation."""
         return self.chat_service.chat_with_quality_interpretation(interpretation_id, message)
+
+
+    def run_test_scan(self, repo_id, scan_id):
+        """Runs a test scan on a repository."""
+        scan = self.db_session.query(Scan).get(scan_id)
+        if not scan:
+            logging.error(f"Test scan failed: Scan with id {scan_id} not found.")
+            return
+
+        repo = self.db_session.query(Repository).get(repo_id)
+        if not repo:
+            scan.status = ScanStatus.FAILED
+            scan.status_message = "Repository not found for this scan."
+            self.db_session.commit()
+            return
+
+        scan.status = ScanStatus.RUNNING
+        self.db_session.commit()
+        try:
+            local_path = self.vcs_service.clone_repo(repo.url, branch=repo.primary_branch)
+            
+            command_to_run = repo.test_command
+            if repo.use_venv and repo.python_version:
+                command_to_run = (
+                    f"uv venv -p {repo.python_version} .test_venv && "
+                    f"source .test_venv/bin/activate && "
+                    f"uv pip sync pyproject.toml && "
+                    f"{repo.test_command}"
+                )
+
+            output = self.sandbox_service.run_command_in_repo(local_path, command_to_run, repo.test_container)
+            
+            scan.test_output = output
+            scan.status = ScanStatus.COMPLETED
+            scan.status_message = "Test scan completed."
+            self.db_session.commit()
+        except Exception as e:
+            scan.status = ScanStatus.FAILED
+            scan.status_message = f"Error during test scan: {str(e)}"
+            self.db_session.commit()
+            logging.error(f"Error during test scan of repo {repo.id}: {e}", exc_info=True)
+
+
+
+    def generate_test_command(self, repo):
+        """Generates a test command for a repository."""
+        try:
+            local_path = self.vcs_service.clone_repo(repo.url, branch=repo.primary_branch)
+            
+            files = []
+            for root, _, filenames in os.walk(local_path):
+                for filename in filenames:
+                    files.append(os.path.join(root, filename))
+            
+            pyproject_toml = None
+            if os.path.exists(os.path.join(local_path, 'pyproject.toml')):
+                with open(os.path.join(local_path, 'pyproject.toml'), 'r') as f:
+                    pyproject_toml = f.read()
+            
+            requirements_txt = None
+            if os.path.exists(os.path.join(local_path, 'requirements.txt')):
+                with open(os.path.join(local_path, 'requirements.txt'), 'r') as f:
+                    requirements_txt = f.read()
+            
+            return self.llm_service.generate_test_command(files, pyproject_toml, requirements_txt)
+        except Exception as e:
+            logging.error(f"Error generating test command for {repo.url}: {e}", exc_info=True)
+            return None

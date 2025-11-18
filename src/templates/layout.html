@@ -5,51 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{% endblock %} - V-Raptor</title>
     <link rel="stylesheet" href="https://bootswatch.com/5/darkly/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="/static/style.css">
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-      <div class="container">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+    <div class="container-fluid">
         <a class="navbar-brand" href="/">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-shield-shaded" viewBox="0 0 16 16">
-            <path fill-rule="evenodd" d="M5.443 1.991a60.17 60.17 0 0 0-2.725.802.454.454 0 0 0-.315.366C1.87 7.056 3.1 9.9 4.567 11.773c.732.94 1.533 1.636 2.197 2.093.333.228.626.394.857.5.116.053.21.089.282.11A.73.73 0 0 0 8 14.5c.007 0 .015-.001.02-.003.072-.022.166-.058.282-.111.23-.106.525-.272.857-.5a10.197 10.197 0 0 0 2.197-2.093C12.9 9.9 14.13 7.056 13.597 3.159a.454.454 0 0 0-.315-.366A60.17 60.17 0 0 0 10.557 1.99C9.536 1.63 8.757 1.5 8 1.5s-1.536.13-2.557.491zM4.82 3.56C5.82 3.187 6.82 3 8 3c1.18 0 2.18.187 3.18.56a.485.485 0 0 1 .326.445c.426 3.566-1.113 6.5-2.833 8.28A9.187 9.187 0 0 1 8 13.18a9.187 9.187 0 0 1-2.673-1.895C3.593 9.505 2.054 6.566 2.48 3.005a.485.485 0 0 1 .34-.445z"/>
-          </svg>
-          V-Raptor
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-shield-shaded" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 14.933 1.178 11.473A.995.995 0 0 1 .5 10.577V5.423c0-.38.203-.73.528-.907L8 1.067l7.472 3.449A.995.995 0 0 1 15.5 5.423v5.154a.995.995 0 0 1-.678.904L8 14.933zM8 2.343 2.027 5.423v5.154L8 13.657l5.973-2.98V5.423L8 2.343z"/>
+                <path d="m8.198.055 6.342 3.17a1.5 1.5 0 0 1 .96 1.352L16 10.577a1.5 1.5 0 0 1-1.018 1.352L8.198 15.92a.5.5 0 0 1-.396 0L1.46 11.929A1.5 1.5 0 0 1 .5 10.577V4.577a1.5 1.5 0 0 1 .96-1.352L7.802.055a.5.5 0 0 1 .396 0zM8 1.18 1.96 4.577v5.859L8 14.819l6.04-3.383V4.577L8 1.18z"/>
+            </svg>
+            V-Raptor
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
+            <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav mx-auto">
-            <li class="nav-item">
-              <a class="nav-link" href="/">Repositories</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/scans">Scans</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/dashboard">Dashboard</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/reports">Reports</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/failed_jobs">Failed Jobs</a>
-            </li>
-          </ul>
-          <ul class="navbar-nav">
-            <li class="nav-item">
-              <a class="nav-link" href="/config">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-gear" viewBox="0 0 16 16">
-                  <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
-                  <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.433 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zM8 13a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
-                </svg>
-              </a>
-            </li>
-          </ul>
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('dashboard') }}"><i class="bi bi-speedometer2"></i> Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('index') }}"><i class="bi bi-journal-code"></i> Repositories</a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-heart-pulse"></i> Scans
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdown">
+                        <li><a class="dropdown-item" href="{{ url_for('scans') }}"><i class="bi bi-activity"></i> All Scans</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('findings') }}"><i class="bi bi-bug"></i> Findings</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('reports') }}"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('config_page') }}"><i class="bi bi-gear"></i> Settings</a>
+                </li>
+            </ul>
         </div>
-      </div>
-    </nav>
+    </div>
+</nav>
 
     <div class="container mt-4">
         {% with messages = get_flashed_messages(with_categories=true) %}

@@ -1,36 +1,82 @@
 {% extends "layout.html" %}
-{% block title %}Vulnerability Reports{% endblock %}
+{% block title %}Reports{% endblock %}
 {% block content %}
-<h1>Vulnerability Reports</h1>
-
 <div class="row">
     <div class="col-md-6">
-        <div class="card border-primary mb-3">
-            <div class="card-header">Top 5 Most Common Vulnerabilities</div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Top 5 Vulnerability Types</h3>
+            </div>
             <div class="card-body">
-                <ul class="list-group">
-                    {% for vuln, count in top_vulnerabilities %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <a href="{{ url_for('findings_by_description', description=vuln) }}">{{ vuln }}</a>
-                            <span class="badge bg-primary rounded-pill">{{ count }}</span>
-                        </li>
+                <ul class="list-group list-group-flush">
+                    {% for vulnerability, count in top_vulnerabilities %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('findings_by_description', description=vulnerability) }}">{{ vulnerability }}</a>
+                        <span class="badge bg-primary rounded-pill">{{ count }}</span>
+                    </li>
                     {% endfor %}
                 </ul>
             </div>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="card border-primary mb-3">
-            <div class="card-header">Top 5 Repositories with Most Vulnerabilities</div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Top 5 Repositories by Vulnerability Count</h3>
+            </div>
             <div class="card-body">
-                <ul class="list-group">
+                <ul class="list-group list-group-flush">
                     {% for repo_id, repo_name, count in top_repos %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <a href="/repository/{{ repo_id }}">{{ repo_name }}</a>
-                            <span class="badge bg-primary rounded-pill">{{ count }}</span>
-                        </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('repository', repo_id=repo_id) }}">{{ repo_name }}</a>
+                        <span class="badge bg-primary rounded-pill">{{ count }}</span>
+                    </li>
                     {% endfor %}
                 </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Vulnerabilities per 1000 Lines of Code</h3>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Repository</th>
+                            <th>Total SLOC</th>
+                            <th>Total Vulnerabilities</th>
+                            <th>High</th>
+                            <th>Medium</th>
+                            <th>Low</th>
+                            <th>Vulnerabilities per 1k LOC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for repo in vulnerabilities_per_loc %}
+                        <tr>
+                            <td>{{ repo.name }}</td>
+                            <td>{{ repo.total_sloc }}</td>
+                            <td>{{ repo.total_vulnerabilities }}</td>
+                            <td>{{ repo.high_vulnerabilities }}</td>
+                            <td>{{ repo.medium_vulnerabilities }}</td>
+                            <td>{{ repo.low_vulnerabilities }}</td>
+                            <td>
+                                {% if repo.total_sloc > 0 %}
+                                    {{ "%.2f"|format((repo.total_vulnerabilities / repo.total_sloc) * 1000) }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>

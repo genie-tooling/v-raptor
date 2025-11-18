@@ -38,6 +38,15 @@
     </div>
 </div>
 
+{% if scan.scan_type == 'test' %}
+<div class="card border-success mb-3">
+    <div class="card-header">Test Output</div>
+    <div class="card-body">
+        <pre><code>{{ scan.test_output }}</code></pre>
+    </div>
+</div>
+{% endif %}
+
 <div class="card border-secondary">
     <div class="card-header">Findings ({{ findings_count }})</div>
     <div class="card-body">

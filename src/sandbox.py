@@ -1,13 +1,16 @@
 import docker
 import io
 import tarfile
+from . import config
 
 class SandboxService:
     def __init__(self):
         try:
             self.client = docker.from_env()
             # This is the name of the pre-built image. You must create this image.
-            self.image_name = "v-raptor-sandbox:latest" 
+            self.image_name = "v-raptor-sandbox:latest"
+            if config.DOCKER_REGISTRY and not self.image_name.startswith(config.DOCKER_REGISTRY):
+                self.image_name = f"{config.DOCKER_REGISTRY}/{self.image_name}"
         except docker.errors.DockerException as e:
             raise RuntimeError(f"Docker is not running or misconfigured: {e}")
 
@@ -88,3 +91,27 @@ class SandboxService:
             pass # Container already gone
         except Exception as e:
             print(f"Error destroying sandbox: {e}")
+
+    def run_command_in_repo(self, repo_path, command, image_name=None):
+        """Runs a command in a sandbox with the repo mounted."""
+        container = None
+        try:
+            image_to_use = image_name if image_name else self.image_name
+            container = self.client.containers.run(
+                image_to_use,
+                command=command,
+                volumes={repo_path: {'bind': '/app', 'mode': 'rw'}},
+                working_dir='/app',
+                detach=False,
+                remove=True
+            )
+            return container.decode('utf-8')
+        except Exception as e:
+            print(f"Error running command in repo: {e}")
+            return f"Error: {e}"
+        finally:
+            if container:
+                try:
+                    container.remove()
+                except:
+                    pass
