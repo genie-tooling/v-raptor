@@ -351,7 +351,7 @@ class Scanner:
                     code_coverage=all_metrics.get('code_coverage'),
                     tests_passing=all_metrics.get('tests_passing'),
                     duplicated_lines=all_metrics.get('duplicated_lines'),
-                    linter_issues=all_items.get('linter_issues'),
+                    linter_issues=all_metrics.get('linter_issues'),
                     coupling=all_metrics.get('coupling', 0.0),
                     cohesion=all_metrics.get('cohesion', 0.0)
                 )
