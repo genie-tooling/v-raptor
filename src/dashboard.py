@@ -1,5 +1,7 @@
 from sqlalchemy import func, and_
+from collections import defaultdict
 from .database import Repository, Scan, Finding, QualityMetric
+from .language_detector import get_language_for_file
 
 
 class Dashboard:
@@ -54,6 +56,97 @@ class Dashboard:
         ).filter(
             Scan.id == latest_scan_ids_subquery.c.latest_scan_id
         ).group_by(Repository.name).all()
+
+    def get_languages_by_repo(self):
+        """Gets the languages for each repository from the most recent scan."""
+        latest_scan_ids_subquery = self.db_session.query(
+            Scan.repository_id,
+            func.max(Scan.id).label('latest_scan_id')
+        ).group_by(Scan.repository_id).subquery()
+
+        results = self.db_session.query(
+            Repository.name,
+            Scan.languages
+        ).join(
+            Scan,
+            Repository.id == Scan.repository_id
+        ).join(
+            latest_scan_ids_subquery,
+            and_(
+                Scan.repository_id == latest_scan_ids_subquery.c.repository_id,
+                Scan.id == latest_scan_ids_subquery.c.latest_scan_id
+            )
+        ).all()
+
+        return {repo_name: languages for repo_name, languages in results if languages}
+
+    def get_findings_by_language_across_repos(self):
+        """Gets the number of findings per language across all repos from the most recent scans."""
+        latest_scan_ids_subquery = self.db_session.query(
+            Scan.repository_id,
+            func.max(Scan.id).label('latest_scan_id')
+        ).filter(
+            Scan.scan_type != 'quality'
+        ).group_by(Scan.repository_id).subquery()
+
+        findings = self.db_session.query(
+            Finding
+        ).join(
+            Scan,
+            Finding.scan_id == Scan.id
+        ).join(
+            latest_scan_ids_subquery,
+            and_(
+                Scan.repository_id == latest_scan_ids_subquery.c.repository_id,
+                Scan.id == latest_scan_ids_subquery.c.latest_scan_id
+            )
+        ).all()
+
+        findings_by_lang = defaultdict(int)
+        for finding in findings:
+            if finding.file_path:
+                lang = get_language_for_file(finding.file_path)
+                if lang:
+                    findings_by_lang[lang] += 1
+        
+        return findings_by_lang
+
+    def get_findings_by_language_per_repo(self):
+        """Gets the number of findings per language for each repo from the most recent scans."""
+        latest_scan_ids_subquery = self.db_session.query(
+            Scan.repository_id,
+            func.max(Scan.id).label('latest_scan_id')
+        ).filter(
+            Scan.scan_type != 'quality'
+        ).group_by(Scan.repository_id).subquery()
+
+        findings = self.db_session.query(
+            Repository.name,
+            Finding
+        ).join(
+            Scan,
+            Repository.id == Scan.repository_id
+        ).join(
+            Finding,
+            Finding.scan_id == Scan.id
+        ).join(
+            latest_scan_ids_subquery,
+            and_(
+                Scan.repository_id == latest_scan_ids_subquery.c.repository_id,
+                Scan.id == latest_scan_ids_subquery.c.latest_scan_id
+            )
+        ).all()
+
+        repo_findings_by_lang = defaultdict(lambda: defaultdict(int))
+        for repo_name, finding in findings:
+            if finding.file_path:
+                lang = get_language_for_file(finding.file_path)
+                if lang:
+                    repo_findings_by_lang[repo_name][lang] += 1
+        
+        # Convert defaultdict to dict for easier use in templates
+        return {repo: dict(langs) for repo, langs in repo_findings_by_lang.items()}
+
 
     def get_dashboard_metrics(self):
         """Gets metrics for the dashboard."""

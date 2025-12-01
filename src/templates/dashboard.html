@@ -79,8 +79,60 @@
     </div>
 </div>
 
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header">Languages by Repository</div>
+            <div class="card-body">
+                <canvas id="languagesByRepoChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header">Findings by Language (All Repos)</div>
+            <div class="card-body">
+                <canvas id="findingsByLangChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-secondary mt-4">
+    <div class="card-header">Findings by Language per Repository</div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Repository</th>
+                    <th>Language</th>
+                    <th>Findings</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for repo, langs in findings_by_lang_per_repo.items() %}
+                    {% for lang, count in langs.items() %}
+                        <tr>
+                            <td>{{ repo }}</td>
+                            <td>{{ lang }}</td>
+                            <td>{{ count }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center">No findings to display.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
 <script>
     console.log("Findings by Repo:", {{ findings_by_repo | tojson }});
+    console.log("Languages by Repo:", {{ languages_by_repo | tojson }});
+    console.log("Findings by Language (All Repos):", {{ findings_by_lang_across_repos | tojson }});
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -126,6 +178,23 @@
             ]
         };
 
+        const languagesByRepoData = {
+            labels: {{ languages_by_repo[repos[0].name] | map('title') | list | tojson if repos and repos[0].name in languages_by_repo else [] }},
+            datasets: [{
+                label: 'Languages',
+                data: {{ languages_by_repo[repos[0].name] | map('length') | list | tojson if repos and repos[0].name in languages_by_repo else [] }},
+            }]
+        };
+
+        const findingsByLangData = {
+            labels: {{ findings_by_lang_across_repos.keys() | list | tojson }},
+            datasets: [{
+                label: 'Number of Findings',
+                data: {{ findings_by_lang_across_repos.values() | list | tojson }},
+                backgroundColor: '#6f42c1', // Purple
+            }]
+        };
+
         const severityChart = new Chart(document.getElementById('severityChart'), {
             type: 'pie',
             data: severityData,
@@ -156,6 +225,16 @@
                     }
                 }
             }
+        });
+
+        new Chart(document.getElementById('languagesByRepoChart'), {
+            type: 'pie',
+            data: languagesByRepoData,
+        });
+
+        new Chart(document.getElementById('findingsByLangChart'), {
+            type: 'bar',
+            data: findingsByLangData,
         });
 
         document.getElementById('severity-repo-filter').addEventListener('change', function() {

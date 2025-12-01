@@ -24,6 +24,35 @@ V-Raptor is an AI agent for automated code analysis, bug detection, and remediat
 - Go
 - Redis
 
+### Tool Dependencies
+
+V-Raptor relies on several external tools for its scanning capabilities. These tools are automatically installed when using the provided `Dockerfile`. If you are running V-Raptor without Docker, you will need to install them manually.
+
+-   **SAST & Secret Scanning:**
+    -   `semgrep`
+    -   `bandit`
+    -   `gitleaks`
+    -   `brakeman`
+    -   `njsscan`
+    -   `gosec`
+    -   `cppcheck`
+-   **Code Quality (Python):**
+    -   `pylint`
+    -   `cohesion`
+    -   `radon`
+-   **Code Quality (Ruby):**
+    -   `rubycritic`
+-   **Code Quality (JavaScript):**
+    -   `plato`
+-   **Code Quality (Go):**
+    -   `gocyclo`
+-   **Code Quality (Rust):**
+    -   `rust-code-analysis-cli`
+-   **Code Quality (C++):**
+    -   `lizard`
+-   **Code Duplication:**
+    -   `pmd` (via a downloaded zip)
+
 ### Installation
 
 1. Clone the repository:

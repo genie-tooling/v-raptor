@@ -111,16 +111,22 @@
                         </div>
                     </div>
                 </div>
+                
                 <div class="tab-pane fade" id="api-keys">
                     <div class="mb-3">
                         <label for="gemini_api_key" class="form-label">Gemini API Key</label>
-                        <form action="/save_gemini_api_key" method="post" class="d-flex">
-                            <input type="text" name="gemini_api_key" class="form-control" placeholder="Enter new Gemini API Key">
-                            <button type="submit" class="btn btn-primary ms-2">Save</button>
-                        </form>
+                        <input type="text" name="gemini_api_key" class="form-control" placeholder="Enter new Gemini API Key (leave empty to keep existing)">
+                        <div class="form-text">This key will be saved along with the other global settings.</div>
                     </div>
                 </div>
+
                 <div class="tab-pane fade" id="global-settings">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="run_tests_in_container_default" name="run_tests_in_container_default" {% if config.RUN_TESTS_IN_CONTAINER_DEFAULT %}checked{% endif %}>
+                        <label class="form-check-label" for="run_tests_in_container_default">Run Tests in Docker Container (Default)</label>
+                        <div class="form-text">If disabled, tests will attempt to run on the worker machine directly (Local Mode).</div>
+                    </div>
+
                     <div class="mb-3">
                         <label for="gitleaks_path" class="form-label">Gitleaks Path</label>
                         <input type="text" name="gitleaks_path" class="form-control" value="{{ config.GITLEAKS_PATH }}">
@@ -149,9 +155,39 @@
                         <label for="docker_registry" class="form-label">Docker Registry</label>
                         <input type="text" name="docker_registry" class="form-control" value="{{ config.DOCKER_REGISTRY }}">
                     </div>
+                    
                     <div class="mb-3">
-                        <label for="test_container_images" class="form-label">Test Container Images (comma-separated)</label>
-                        <textarea name="test_container_images" class="form-control" rows="3">{{ config.TEST_CONTAINER_IMAGES|join(', ') }}</textarea>
+                        <label class="form-label">Test Containers</label>
+                        <div class="table-responsive">
+                            <table class="table table-bordered" id="containerTable">
+                                <thead>
+                                    <tr>
+                                        <th>Docker Image</th>
+                                        <th>Entrypoint (e.g., /bin/bash)</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for container in config.TEST_CONTAINER_IMAGES %}
+                                    <tr>
+                                        <td>
+                                            <!-- Handle both dictionary and legacy string formats -->
+                                            <input type="text" name="container_image[]" class="form-control" value="{{ container.image if container.image is defined else container }}" placeholder="e.g. python:3.10">
+                                        </td>
+                                        <td>
+                                            <input type="text" name="container_entrypoint[]" class="form-control" value="{{ container.entrypoint if container.entrypoint is defined else '/bin/sh' }}" placeholder="/bin/sh">
+                                        </td>
+                                        <td>
+                                            <button type="button" class="btn btn-info btn-sm probe-btn">Probe</button>
+                                            <button type="button" class="btn btn-danger btn-sm remove-row">Remove</button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            <button type="button" class="btn btn-secondary btn-sm" id="addContainerRow">Add Container</button>
+                        </div>
+                        <small class="text-muted">Click "Probe" to automatically detect the shell entrypoint for an image.</small>
                     </div>
                 </div>
             </div>
@@ -199,6 +235,73 @@
                 });
                 // Initial setup
                 toggleProviderFields(providerSelect.value, clientType);
+            }
+        });
+        
+        // Container Table Logic
+        const tableBody = document.querySelector('#containerTable tbody');
+        
+        document.getElementById('addContainerRow').addEventListener('click', function() {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><input type="text" name="container_image[]" class="form-control" placeholder="e.g. python:3.10"></td>
+                <td><input type="text" name="container_entrypoint[]" class="form-control" placeholder="/bin/sh"></td>
+                <td>
+                    <button type="button" class="btn btn-info btn-sm probe-btn">Probe</button>
+                    <button type="button" class="btn btn-danger btn-sm remove-row">Remove</button>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+
+        tableBody.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-row')) {
+                e.target.closest('tr').remove();
+            }
+            
+            if (e.target.classList.contains('probe-btn')) {
+                const row = e.target.closest('tr');
+                const imageInput = row.querySelector('input[name="container_image[]"]');
+                const entryInput = row.querySelector('input[name="container_entrypoint[]"]');
+                const btn = e.target;
+
+                if (!imageInput.value) {
+                    alert("Please enter an image name first.");
+                    return;
+                }
+
+                btn.disabled = true;
+                btn.textContent = "Probing...";
+
+                fetch('/api/probe_image', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({image_name: imageInput.value})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        entryInput.value = data.entrypoint;
+                        btn.classList.remove('btn-info');
+                        btn.classList.add('btn-success');
+                        btn.textContent = "Found!";
+                        setTimeout(() => {
+                            btn.classList.remove('btn-success');
+                            btn.classList.add('btn-info');
+                            btn.textContent = "Probe";
+                        }, 2000);
+                    } else {
+                        alert("Probe failed: " + data.message);
+                        btn.textContent = "Probe";
+                    }
+                })
+                .catch(err => {
+                    alert("Error probing image: " + err);
+                    btn.textContent = "Probe";
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                });
             }
         });
     });

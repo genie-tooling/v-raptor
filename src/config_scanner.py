@@ -33,10 +33,19 @@ def scan_configuration(file_path, llm_service):
 def find_config_files(directory):
     """Finds common configuration files in a directory."""
     config_files = []
+    supported_filenames = [
+        'Dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
+        'kubernetes.yaml', 'kubernetes.yml', 'deployment.yml', 'deployment.yaml',
+        'values.yaml', 'values.yml', 'Chart.yaml',
+        'package.json', 'Gemfile', 'Cargo.toml',
+        'Makefile', 'CMakeLists.txt',
+        'nginx.conf', 'httpd.conf',
+    ]
     supported_extensions = ('.yml', '.yaml', '.json', '.toml', '.ini', '.conf', '.tf')
+    
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(supported_extensions):
+            if file in supported_filenames or file.endswith(supported_extensions):
                 config_files.append(os.path.join(root, file))
     return config_files
 
