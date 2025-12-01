@@ -35,7 +35,7 @@ class GoQualityScanner(BaseQualityScanner):
                 return metrics
 
             total_complexity = 0
-            for line in result.stdout.strip().split('\\n'):
+            for line in result.stdout.strip().split('\n'):
                 match = re.match(r'^(\\d+)', line)
                 if match:
                     total_complexity += int(match.group(1))
