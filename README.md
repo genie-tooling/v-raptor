@@ -26,7 +26,7 @@ V-Raptor is an AI agent for automated code analysis, bug detection, and remediat
 
 ### Tool Dependencies
 
-V-Raptor relies on several external tools for its scanning capabilities. These tools are automatically installed when using the provided `Dockerfile`. If you are running V-R-Raptor without Docker, you will need to install them manually.
+V-Raptor relies on several external tools for its scanning capabilities. These tools are automatically installed when using the provided `Dockerfile`. If you are running V-Raptor without Docker, you will need to install them manually.
 
 -   **SAST & Secret Scanning:**
     -   `semgrep`
