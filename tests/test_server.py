@@ -3,8 +3,8 @@ from unittest.mock import patch, MagicMock
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.database import Base, Repository, Scan, Finding # Import necessary models
-import json # Added import for json
+from src.database import Base, Repository, Scan, Finding, QualityMetric
+import json
 
 # Set a dummy API key for testing
 os.environ['GEMINI_API_KEY'] = 'test-key'
@@ -75,6 +75,89 @@ class TestServer(unittest.TestCase):
         response = self.app.get('/')
         self.assertEqual(response.status_code, 200)
 
+    def test_config_route(self):
+        """Test the config route."""
+        self.mock_llm_service_instance.get_available_models.return_value = ['model1', 'model2']
+        response = self.app.get('/config')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'model1', response.data)
+        self.assertIn(b'model2', response.data)
+
+    def test_failed_jobs_route(self):
+        """Test the failed_jobs route."""
+        with patch('src.server.FailedJobRegistry') as mock_registry:
+            mock_registry.return_value.get_job_ids.return_value = ['job1', 'job2']
+            self.mock_q.fetch_job.side_effect = [
+                MagicMock(id='job1', func_name='func1', args=(), kwargs={}, exc_info='error1'),
+                MagicMock(id='job2', func_name='func2', args=(), kwargs={}, exc_info='error2')
+            ]
+            response = self.app.get('/failed_jobs')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'job1', response.data)
+            self.assertIn(b'job2', response.data)
+
+    def test_findings_route(self):
+        """Test the findings route."""
+        repo = Repository(name='test_repo', url='http://test.com')
+        scan = Scan(repository=repo)
+        finding = Finding(description='test finding', severity='HIGH', scan=scan)
+        self.session.add_all([repo, scan, finding])
+        self.session.commit()
+        response = self.app.get('/findings')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'test finding', response.data)
+
+    def test_reports_route(self):
+        """Test the reports route."""
+        repo = Repository(id=1, name='test_repo', url='http://test.com')
+        scan = Scan(id=1, repository=repo)
+        finding = Finding(id=1, description='test finding', severity='HIGH', scan=scan)
+        quality_metric = QualityMetric(id=1, scan_id=scan.id, sloc=1000)
+        self.session.add_all([repo, scan, finding, quality_metric])
+        self.session.commit()
+        response = self.app.get('/reports')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'test_repo', response.data)
+        self.assertIn(b'test finding', response.data)
+        self.assertIn(b'1000', response.data)
+
+
+    def test_dashboard_route(self):
+        """Test the dashboard route."""
+        repo = Repository(name='test_repo', url='http://test.com')
+        scan = Scan(repository=repo, languages=['Python'])
+        finding = Finding(description='test finding', severity='HIGH', scan=scan)
+        quality_metric = QualityMetric(scan_id=scan.id, sloc=1000, maintainability_index=80, code_coverage=90)
+        self.session.add_all([repo, scan, finding, quality_metric])
+        self.session.commit()
+        
+        # This is a bit complex to mock because of how the data is structured.
+        # We will create mock objects that have the .name attribute
+        class MockRepoMetric:
+            def __init__(self, name, avg_maintainability, code_coverage):
+                self.name = name
+                self.avg_maintainability = avg_maintainability
+                self.code_coverage = code_coverage
+        
+        self.mock_orchestrator_instance.get_dashboard_metrics.return_value = {
+            'total_repos': 1,
+            'total_scans': 1,
+            'total_findings': 1
+        }
+        self.mock_orchestrator_instance.get_findings_by_severity.return_value.all.return_value = [('HIGH', 1)]
+        self.mock_orchestrator_instance.get_findings_by_repo.return_value = [('test_repo', 1)]
+        self.mock_orchestrator_instance.dashboard.get_average_quality_metrics_by_repo.return_value = [
+            MockRepoMetric(name='test_repo', avg_maintainability=80, code_coverage=90)
+        ]
+        self.mock_orchestrator_instance.dashboard.get_languages_by_repo.return_value = {'test_repo': ['Python']}
+        self.mock_orchestrator_instance.dashboard.get_findings_by_language_across_repos.return_value = {'Python': 1}
+        self.mock_orchestrator_instance.dashboard.get_findings_by_language_per_repo.return_value = {'test_repo': {'Python': 1}}
+        
+        response = self.app.get('/dashboard')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'test_repo', response.data)
+
+
     def test_save_settings_route(self):
         """Test the save_settings route."""
         response = self.app.get('/config')
@@ -103,15 +186,25 @@ class TestServer(unittest.TestCase):
             self.assertEqual(response.status_code, 302) # Redirect status code
             self.assertTrue(mock_open.call_count > 0) # Ensure open was called to write config
 
-    def test_add_repo_route(self):
+    @patch('src.server.di.get_orchestrator')
+    @patch('src.server.di.get_vcs_service')
+    def test_add_repo_route(self, mock_get_vcs_service, mock_get_orchestrator):
         """Test the add_repo route."""
-        self.mock_vcs_service_instance.parse_and_validate_repo_url.return_value = ("https://github.com/test/repo.git", "main")
+        mock_vcs_service = MagicMock()
+        mock_vcs_service.parse_and_validate_repo_url.return_value = ("https://github.com/test/repo.git", "main")
+        mock_get_vcs_service.return_value = mock_vcs_service
+
+        mock_orchestrator = MagicMock()
+        mock_get_orchestrator.return_value = mock_orchestrator
+
         response = self.app.post('/add_repo', data={'repo_url': 'https://github.com/test/repo.git'})
         self.assertEqual(response.status_code, 302) # Should redirect
         repo = self.session.query(Repository).filter_by(url='https://github.com/test/repo.git').first()
         self.assertIsNotNone(repo)
         self.assertEqual(repo.name, 'repo')
         self.assertIsNone(repo.primary_branch)
+        mock_orchestrator.setup_new_repository.assert_called_once()
+
 
 
     def test_remove_repo_route(self):
@@ -121,7 +214,7 @@ class TestServer(unittest.TestCase):
         self.session.commit()
         response = self.app.post(f'/remove_repo/{repo.id}')
         self.assertEqual(response.status_code, 302) # Redirect
-        self.assertIsNone(self.session.query(Repository).get(repo.id))
+        self.assertIsNone(self.session.get(Repository, repo.id))
 
     def test_repository_route(self):
         """Test the repository route."""
@@ -129,7 +222,6 @@ class TestServer(unittest.TestCase):
         self.session.add(repo)
         self.session.commit()
         response = self.app.get(f'/repository/{repo.id}')
-        print(response.data) # Debugging line
         self.assertEqual(response.status_code, 200)
 
     def test_run_scan_route(self):

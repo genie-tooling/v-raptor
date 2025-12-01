@@ -15,7 +15,12 @@ RUN apt-get update && \
     git \
     curl \
     openjdk-17-jdk \
-    unzip && \
+    unzip \
+    ruby-full \
+    nodejs \
+    npm \
+    golang-go \
+    cppcheck && \
     rm -rf /var/lib/apt/lists/*
 
 # Install PMD for code duplication analysis
@@ -33,7 +38,27 @@ ENV PATH="/opt/pmd/bin:$PATH"
 RUN pipx install semgrep && \
     pipx install bandit && \
     pipx install pylint && \
-    pipx install cohesion
+    pipx install cohesion && \
+    pipx install lizard && \
+    pipx install njsscan
+
+# Ruby
+RUN gem install rubycritic && \
+    gem install brakeman
+
+# JavaScript
+RUN npm install -g plato
+
+# Go
+ENV PATH="/usr/local/go/bin:${PATH}"
+RUN go install github.com/fzipp/gocyclo/cmd/gocyclo@latest && \
+    go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+# Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
+RUN sh rustup-init.sh -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN cargo install --git https://github.com/mozilla/rust-code-analysis.git rust-code-analysis-cli
 
 # Install gitleaks
 RUN GITLEAKS_VERSION=$(curl -s "https://api.github.com/repos/gitleaks/gitleaks/releases/latest" | grep -oP '"tag_name": "v\K[0-9.]+' | head -n 1) && \

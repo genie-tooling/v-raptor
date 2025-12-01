@@ -1,7 +1,7 @@
 # src/database.py
 
 import enum
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, DateTime, Float, Boolean, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, DateTime, Float, Boolean, Enum, JSON
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
 from .config import DATABASE_URL
@@ -19,10 +19,16 @@ class Repository(Base):
     periodic_scan_enabled = Column(Boolean, default=False)
     periodic_scan_interval = Column(Integer, default=86400) # 24 hours
     sast_exclusions = Column(Text, nullable=True)
-    test_command = Column(String, default='pytest')
+    
+    # Test Configuration
+    test_command = Column(String, nullable=True)
     use_venv = Column(Boolean, default=False)
     python_version = Column(String, nullable=True)
     test_container = Column(String, nullable=True)
+    
+    # New Column: Override global setting. True=Container, False=Local, None=Use Global
+    run_tests_in_container = Column(Boolean, nullable=True, default=None) 
+    
     scans = relationship("Scan", back_populates="repository")
 
 class ScanStatus(enum.Enum):
@@ -30,7 +36,6 @@ class ScanStatus(enum.Enum):
     RUNNING = 'running'
     COMPLETED = 'completed'
     FAILED = 'failed'
-
 
 class Scan(Base):
     __tablename__ = 'scan'
@@ -48,6 +53,7 @@ class Scan(Base):
     auto_patch_enabled = Column(Boolean, default=False)
     generate_test_script = Column(Boolean, default=False)
     test_output = Column(Text, nullable=True)
+    languages = Column(JSON, nullable=True)
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
     quality_metrics = relationship("QualityMetric", back_populates="scan", cascade="all, delete-orphan")
     repository = relationship("Repository", back_populates="scans")
@@ -64,6 +70,9 @@ class Finding(Base):
     confidence_score = Column(Float)
     status = Column(String, default='new')
     cve_id = Column(String)
+    description_text = Column(Text, nullable=True) # Added for caching parsed text
+    description_url = Column(String, nullable=True) # Added for caching url
+    rule_id = Column(String, nullable=True) # Added for caching rule id
     scan = relationship("Scan", back_populates="findings")
     evidence = relationship("Evidence", back_populates="finding", cascade="all, delete-orphan")
     patch = relationship("Patch", uselist=False, back_populates="finding", cascade="all, delete-orphan")
@@ -120,7 +129,7 @@ class QualityMetric(Base):
     halstead_volume = Column(Float)
     maintainability_index = Column(Float)
     bug_risk_score = Column(Float)
-    # Project-wide metrics (will be duplicated across rows for a scan)
+    # Project-wide metrics
     code_coverage = Column(Float)
     tests_passing = Column(Integer)
     duplicated_lines = Column(Integer)

@@ -9,6 +9,20 @@
     </div>
 </div>
 
+<div class="card border-primary mb-3">
+    <div class="card-header">Repository Details</div>
+    <div class="card-body">
+        <p><strong>URL:</strong> {{ repo.url }}</p>
+        {% if repo.languages %}
+            <p><strong>Detected Languages:</strong>
+            {% for lang in repo.languages %}
+                <span class="badge bg-secondary">{{ lang }}</span>
+            {% endfor %}
+            </p>
+        {% endif %}
+    </div>
+</div>
+
 
 <div class="card border-primary mb-3">
     <div class="card-header">Run New Scan</div>
@@ -73,6 +87,15 @@
     <div class="card-header">Test Configuration</div>
     <div class="card-body">
         <form action="/repository/{{ repo.id }}/test_command" method="post">
+            <div class="form-check form-switch mb-3">
+                <label for="run_tests_in_container" class="form-label">Execution Environment</label>
+                <select name="run_tests_in_container" id="run_tests_in_container" class="form-select">
+                    <option value="default" {% if repo.run_tests_in_container is none %}selected{% endif %}>Use Global Default</option>
+                    <option value="true" {% if repo.run_tests_in_container == True %}selected{% endif %}>Run in Sandbox Container</option>
+                    <option value="false" {% if repo.run_tests_in_container == False %}selected{% endif %}>Run Locally (Worker)</option>
+                </select>
+            </div>
+
             <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="customize_test_command" name="customize_test_command" {% if repo.test_command %}checked{% endif %}>
                 <label class="form-check-label" for="customize_test_command">Customize Test Command</label>
@@ -82,6 +105,20 @@
                     <label for="test_command" class="form-label">Test Command</label>
                     <textarea class="form-control" id="test_command" name="test_command" rows="3">{{ repo.test_command }}</textarea>
                 </div>
+                
+                <!-- New input for generation instructions -->
+                <div class="mb-3">
+                    <label for="generation_instructions" class="form-label">Instructions for Generation (Optional)</label>
+                    <input type="text" class="form-control" id="generation_instructions" placeholder="e.g. Make sure to install git, use python3, ignore warnings...">
+                    <div class="form-text">Specific requirements for the AI when generating the test command.</div>
+                </div>
+                
+                <div class="d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-secondary" id="generate_test_command">Generate Test Command</button>
+                </div>
+
+                <hr>
+
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="use_venv" name="use_venv" {% if repo.use_venv %}checked{% endif %}>
                     <label class="form-check-label" for="use_venv">Use Virtual Env</label>
@@ -94,12 +131,12 @@
                     <label for="test_container" class="form-label">Test Container</label>
                     <select class="form-select" id="test_container" name="test_container">
                         {% for container in config.TEST_CONTAINER_IMAGES %}
-                            <option value="{{ container }}" {% if repo.test_container == container %}selected{% endif %}>{{ container }}</option>
+                            {% set image_name = container.image if container.image is defined else container %}
+                            <option value="{{ image_name }}" {% if repo.test_container == image_name %}selected{% endif %}>{{ image_name }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <button type="submit" class="btn btn-primary">Save Command</button>
-                <button type="button" class="btn btn-secondary" id="generate_test_command">Generate Test Command</button>
+                <button type="submit" class="btn btn-primary">Save Configuration</button>
             </div>
         </form>
     </div>
@@ -184,12 +221,20 @@
 
     document.getElementById('generate_test_command').addEventListener('click', function() {
         var button = this;
+        var instructionsInput = document.getElementById('generation_instructions');
         var originalText = button.innerHTML;
+        
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
 
         fetch('/repository/{{ repo.id }}/generate_test_command', {
-            method: 'POST'
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                instructions: instructionsInput.value
+            })
         })
         .then(response => response.json())
         .then(data => {

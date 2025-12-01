@@ -10,6 +10,7 @@ class LLMService:
     def __init__(self):
         self.scanner_client = self._initialize_client('scanner')
         self.patcher_client = self._initialize_client('patcher')
+        # ... [Existing tool definitions remain unchanged] ...
         self.tools = [
             {
                 "name": "run_semgrep",
@@ -101,12 +102,12 @@ class LLMService:
             return getattr(config, f"{prefix}_OLLAMA_MODEL")
         elif provider == 'gemini':
             return getattr(config, f"{prefix}_GEMINI_MODEL")
-        # llama.cpp doesn't have a model name in the same way, it's part of the client initialization.
         return None
 
     def _create_chat_completion(self, client: BaseLLMProvider, model_name, prompt, is_json=True):
         return client.create_chat_completion(model_name, prompt, is_json)
 
+    # ... [analyze_diff_with_tools, analyze_file, interpret_quality_metrics remain unchanged] ...
     def analyze_diff_with_tools(self, diff):
         prompt = f"""You are a senior security engineer. Analyze the following diff and identify potential vulnerabilities.
 
@@ -203,7 +204,6 @@ If no vulnerabilities are found, respond with an empty JSON object: `{{}}`.
         return self._create_chat_completion(self.scanner_client, self._get_model_name('scanner'), prompt)
 
     def interpret_quality_metrics(self, metric):
-        """Interprets the quality metrics for a file."""
         prompt = f"""
 You are a senior software engineer and code quality expert.
 You are reviewing a file and its quality metrics.
@@ -290,21 +290,53 @@ Provide ONLY the fix in the git diff format. Do not include a commit message or 
 Start the diff with '--- a/' and '+++ b/'."""
         return self._create_chat_completion(self.patcher_client, self._get_model_name('patcher'), prompt, is_json=False)
 
-    def generate_test_command(self, files, pyproject_toml, requirements_txt):
-        prompt = f"""You are a senior software engineer specializing in Python. Based on the following file structure and dependency files, generate a single line command to run all pytest tests in the repository.
+    # --- UPDATED METHOD ---
+    def generate_test_command(self, files, languages, package_files, instructions=None):
+        user_instructions = ""
+        if instructions:
+            user_instructions = f"CRITICAL USER INSTRUCTIONS: {instructions}\n"
 
-File structure:
+        package_files_content = ""
+        for name, content in package_files.items():
+            package_files_content += f"{name} content:\n{content}\n\n"
+
+        prompt = f"""You are a CI/CD Automation Engineer.
+Your goal is to write a SINGLE line of shell code to run the tests for this repository.
+
+Context:
+1. The environment is a minimal Linux container (like Debian slim).
+2. You may need to chain commands using '&&'.
+3. The primary languages detected are: {", ".join(languages)}.
+4. If you need to install software (like git, curl, gcc, or language runtimes like nodejs, ruby), you MUST use `apt-get update && apt-get install -y <package>` before running tests.
+
+Repository File Structure:
 {files}
 
-pyproject.toml:
-{pyproject_toml}
+Package manager files:
+{package_files_content}
 
-requirements.txt:
-{requirements_txt}
+{user_instructions}
 
-Respond with ONLY the command to run the tests. Do not include any explanations or conversational text.
+Task:
+Generate the command line string.
+- Based on the languages and package files, determine the correct dependency installation command (e.g., `npm install`, `bundle install`, `pip install`).
+- Determine the correct test command (e.g., `npm test`, `rake test`, `pytest`).
+- Chain them together into a single command line string.
+
+Output Requirement:
+Respond with ONLY the raw command string.
+NO markdown code blocks (no ```).
+NO conversational text.
+NO explanations.
 """
-        return self._create_chat_completion(self.patcher_client, self._get_model_name('patcher'), prompt, is_json=False)
+        response = self._create_chat_completion(self.patcher_client, self._get_model_name('patcher'), prompt, is_json=False)
+        
+        # Aggressive cleanup
+        clean_response = response.replace('```bash', '').replace('```sh', '').replace('```', '').strip()
+        if clean_response.startswith('`') and clean_response.endswith('`'):
+             clean_response = clean_response.strip('`')
+        
+        return clean_response
 
     def analyze_configuration(self, config_content):
         prompt = f"""You are a senior security engineer. Analyze the following configuration file for security misconfigurations.

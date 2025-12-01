@@ -1,10 +1,20 @@
 import os
 import tempfile
-from git import Repo, GitCommandError
-from github import Github, GithubException
-from io import BytesIO
 import re
 import subprocess
+import logging
+from github import Github, GithubException
+from io import BytesIO
+
+# Handle GitPython import errors gracefully
+try:
+    from git import Repo, GitCommandError
+except ImportError:
+    # If GIT_PYTHON_REFRESH is not set and git is missing, this might raise.
+    # We catch it to allow the module to be imported, but functionality will be broken.
+    logging.warning("GitPython could not initialize. Git executable not found? Git functionality will be disabled.")
+    Repo = None
+    GitCommandError = Exception
 
 class VCSService:
     def __init__(self, git_provider, token):
@@ -134,6 +144,9 @@ class VCSService:
 
     def clone_repo(self, repo_url, branch=None):
         """Clones a git repository to a temporary directory."""
+        if Repo is None:
+            raise RuntimeError("GitPython is not initialized. Cannot clone repo.")
+            
         local_path = tempfile.mkdtemp(prefix="v-raptor-")
         print(f"Cloning {repo_url} to {local_path}")
         if branch:
@@ -145,6 +158,9 @@ class VCSService:
 
     def get_commit_diff(self, repo_path, commit_hash):
         """Gets the diff of a commit against its parent."""
+        if Repo is None:
+            raise RuntimeError("GitPython is not initialized. Cannot get commit diff.")
+            
         try:
             repo = Repo(repo_path)
             commit = repo.commit(commit_hash)
@@ -157,6 +173,9 @@ class VCSService:
 
     def create_pull_request(self, repo_path, repo_url, branch_name, title, body, patch_diff):
         """Applies a patch, creates a branch, pushes it, and opens a PR."""
+        if Repo is None:
+            raise RuntimeError("GitPython is not initialized. Cannot create pull request.")
+
         try:
             repo = Repo(repo_path)
             main_branch = repo.active_branch

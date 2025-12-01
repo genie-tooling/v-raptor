@@ -18,44 +18,7 @@ q = Queue(connection=redis_conn)
 
 def _get_orchestrator():
     """Helper function to create an orchestrator instance."""
-    try:
-        from googlesearch import search as google_search_tool
-
-        def google_web_search_adapter(query: str) -> str:
-            logging.info(f"Performing web search for: '{query}'")
-            try:
-                results_iterator = google_search_tool(query, num_results=5)
-                return "\n".join(list(results_iterator))
-            except Exception as e:
-                logging.error(f"Web search failed: {e}")
-                return ""
-        
-        di.google_web_search = google_web_search_adapter
-        logging.info("Successfully configured the googlesearch-python tool for the worker.")
-    except ImportError:
-        logging.warning("googlesearch tool not found in worker environment.")
-        def placeholder_search(query: str = ""): return ""
-        di.google_web_search = placeholder_search
-    
-    try:
-        logging.info("Initializing database session...")
-        session = get_session()()
-        logging.info("Database session initialized successfully.")
-
-        logging.info("Initializing VCS service...")
-        vcs_service = VCSService(git_provider='github', token='')
-        logging.info("VCS service initialized successfully.")
-
-        logging.info("Initializing Orchestrator (which includes LLMService)...")
-        orchestrator = Orchestrator(vcs_service, session, di.google_web_search)
-        logging.info("Orchestrator initialized successfully.")
-        
-        return orchestrator
-
-    except Exception as e:
-        # This will catch any failure during the init steps and log it.
-        logging.error(f"Failed to initialize orchestrator components: {e}", exc_info=True)
-        return None
+    return di.get_worker_orchestrator()
 
 def run_deep_scan_job(repo_url, scan_id, auto_patch=False, include_tests=False, branch=None):
     """
