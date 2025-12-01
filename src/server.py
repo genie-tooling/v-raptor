@@ -77,7 +77,7 @@ def save_settings():
     with open(config_path, 'w') as f:
         f.write("# src/config.py\n\n")
         
-        f.write("# --- Scanner Model Configuration ---\\n")
+        f.write("# --- Scanner Model Configuration ---\n")
         f.write(f"SCANNER_LLM_PROVIDER = '{request.form.get('scanner_llm_provider')}'\n")
         f.write(f"SCANNER_LLAMA_CPP_MODEL_PATH = r'{request.form.get('scanner_llama_cpp_model_path')}'\n")
         f.write(f"SCANNER_OLLAMA_MODEL = '{request.form.get('scanner_ollama_model')}'\n")
