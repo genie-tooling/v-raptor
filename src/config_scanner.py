@@ -37,7 +37,7 @@ def find_config_files(directory):
         'Dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
         'kubernetes.yaml', 'kubernetes.yml', 'deployment.yml', 'deployment.yaml',
         'values.yaml', 'values.yml', 'Chart.yaml',
-        'package.json', 'Gemfile', 'Cargo.toml', 
+        'package.json', 'Gemfile', 'Cargo.toml',
         'Makefile', 'CMakeLists.txt',
         'nginx.conf', 'httpd.conf',
     ]
