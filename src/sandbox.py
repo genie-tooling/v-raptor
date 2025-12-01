@@ -114,8 +114,10 @@ class SandboxService:
             container = self.client.containers.get(container_id)
             container.stop(timeout=5)
             container.remove()
-        except:
-            pass
+        except docker.errors.NotFound:
+            pass # Container already gone
+        except Exception as e:
+            logging.warning(f"Error destroying sandbox {container_id[:12]}: {e}")
 
     def run_command_in_repo(self, repo_path, command, image_name=None, entrypoint='/bin/sh'):
         """
