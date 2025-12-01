@@ -36,7 +36,7 @@ class RustQualityScanner(BaseQualityScanner):
             
             # The tool outputs JSON for each file, one per line
             # For a single file, we take the first line
-            first_line = result.stdout.strip().split('\\n')[0]
+            first_line = result.stdout.strip().split('\n')[0]
             report = json.loads(first_line)
             
             space_metrics = report.get('spaces', [{}])[0].get('metrics', {})
